@@ -17,7 +17,8 @@ The frontend can call the backend at http://localhost:8000
 **Setup/First time:**
 
 Frontend - 
-    \- Node is required
+    \- Node is required, check `node --version`
+    \- npm is required, `npm install` after installing node
     \- Navigate to `shopie-i`
     \- `npm run dev` to run frontend
         \- Navigate to link in terminal to see site, local to access on your machine, network to access from another's
