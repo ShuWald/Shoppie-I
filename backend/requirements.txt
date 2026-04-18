@@ -8,6 +8,8 @@ requests
 lxml
 openpyxl
 openai # if using it in filter.py
+beautifulsoup4
 =======
 requests>=2.31,<3.0
+beautifulsoup4
 >>>>>>> 3107231fa3480be8898aa7953c762ef536081526

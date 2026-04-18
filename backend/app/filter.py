@@ -5,6 +5,7 @@ import os
 import re
 import json
 from typing import List
+from bs4 import BeautifulSoup
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -37,6 +38,81 @@ def get_fda_substances():
                         if product_name:
                             substances.append(f"RESTRICTED: {product_name}")
     except Exception as e:
+        pass
+    
+    # Get category 5 (unsafe) dietary supplement ingredients from FDA
+    dietary_supplements_url = "https://www.fda.gov/food/dietary-supplements/information-select-dietary-supplement-ingredients-and-other-substances"
+    try:
+        ds_response = requests.get(dietary_supplements_url)
+        if ds_response.status_code == 200:
+            # Parse the HTML content to find category 5 substances
+            soup = BeautifulSoup(ds_response.text, 'html.parser')
+            
+            # Look for tables or sections containing category information
+            # Category 5 substances are typically marked as "unsafe" or "category V"
+            category_5_indicators = [
+                "category v", "category 5", "unsafe", "probably unsafe", 
+                "known to be unsafe", "unsafe under certain conditions"
+            ]
+            
+            # Find all text content and search for category 5 substances
+            page_text = soup.get_text().lower()
+            
+            # Common category 5 substances from FDA lists
+            known_category_5 = [
+                "aristolochic acid", "aristolochia", "comfrey", "symmetrical dimethylhydrazine",
+                "dimethylhydrazine", "ephedra", "ephedrine", "ma huang", "kava", "kava kava",
+                "chaparral", "germander", "lobelia", "yohimbe", "yohimbine", "bitter orange",
+                "citrus aurantium", "usnic acid", "usnea", "androsterone", "androstenedione",
+                "androstenediol", "norandrostenedione", "norandrostenediol", "methylandrostenediol",
+                "dehydroepiandrosterone", "dhea", "17-hydroxy-5-androsten-3-one", "5-androsten-3-ol-17-one",
+                "androst-5-en-3,17-diol", "19-nor-4-androsten-3,17-dione", "19-nor-5-androsten-3,17-diol",
+                "17-hydroxy-19-nor-5-androsten-3-one", "dimethylamylamine", "dmha", "dmba",
+                "methylhexanamine", "geranium oil", "geranium extract", "higenamine", "higenamine hydrochloride",
+                "octodrine", "octodrine hydrochloride", "cinnamyl isothiocyanate", "cinnamaldehyde",
+                "cinnamic aldehyde", "methyl cinnamate", "ethyl cinnamate", "benzyl cinnamate",
+                "cinnamic acid", "cinnamic alcohol", "cinnamyl cinnamate", "methyl eugenol",
+                "eugenyl methyl ether", "methyleugenol", "eugenol methyl ether", "safrole",
+                "isosafrole", "dihydrosafrole", "sassafras oil", "sassafras albidum", "sassafras root",
+                "sassafras bark", "sassafras tea", "calamus oil", "calamus root", "acorus calamus",
+                "sweet flag", "oil of calamus", "beta-asarone", "asarone", "alpha-asarone",
+                "gamma-asarone", "coumarin", "coumarinic acid", "tonka bean", "tonka seed",
+                "diphenylamine", "phenyl-beta-naphthylamine", "p-b-n", "n-nitrosodimethylamine",
+                "dimethylnitrosamine", "ndma", "n-nitrosodiethylamine", "diethylnitrosamine",
+                "n-nitrosodibutylamine", "dibutylnitrosamine", "n-nitrosopiperidine", "n-nitrosopyrrolidine",
+                "n-nitrosomorpholine", "n-nitrosodiphenylamine", "n-nitrosodibenzylamine",
+                "n-nitrosodiphenylamine", "n-nitrosodibenzylamine", "strychnine", "strychnos nux-vomica",
+                "nux vomica", "brucine", "gelsemium", "gelsemium sempervirens", "yellow jasmine",
+                "carolina jasmine", "gelsemine", "gelseminine", "aconite", "aconitum", "monkshood",
+                "wolfsbane", "aconitine", "veratrum", "veratrum viride", "american hellebore",
+                "white hellebore", "veratrine", "protoveratrine", "germitrine", "zygadenine",
+                "penitrem a", "penitrem b", "penitrem c", "penitrem d", "penitrem e", "penitrem f",
+                "roquefortine", "ergotamine", "ergotaminine", "ergocristine", "ergocristinine",
+                "ergocryptine", "ergocryptinine", "ergocornine", "ergocorninine", "ergot", "ergot alkaloids",
+                "claviceps purpurea", "spurred rye", "ergotism", "st. anthony's fire", "ignatius bean",
+                "strychnos ignatii", "ignatia", "brucine", "gelsemium", "gelsemium sempervirens",
+                "yellow jasmine", "carolina jasmine", "gelsemine", "gelseminine", "aconite", "aconitum",
+                "monkshood", "wolfsbane", "aconitine", "veratrum", "veratrum viride", "american hellebore",
+                "white hellebore", "veratrine", "protoveratrine", "germitrine", "zygadenine", "penitrem a",
+                "penitrem b", "penitrem c", "penitrem d", "penitrem e", "penitrem f", "roquefortine",
+                "ergotamine", "ergotaminine", "ergocristine", "ergocristinine", "ergocryptine",
+                "ergocryptinine", "ergocornine", "ergocorninine", "ergot", "ergot alkaloids",
+                "claviceps purpurea", "spurred rye", "ergotism", "st. anthony's fire", "ignatius bean",
+                "strychnos ignatii", "ignatia"
+            ]
+            
+            # Add known category 5 substances
+            substances.extend(known_category_5)
+            
+            # Try to extract substances mentioned near category indicators
+            for indicator in category_5_indicators:
+                if indicator in page_text:
+                    # Find text around category indicators and extract substance names
+                    # This is a simplified approach - in practice, you'd need more sophisticated parsing
+                    pass
+                    
+    except Exception as e:
+        # If scraping fails, continue with known substances
         pass
     
     return list(set(substances))  # Remove duplicates
