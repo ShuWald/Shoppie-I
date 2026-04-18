@@ -1,7 +1,8 @@
 import re
 from typing import List
-from models import TrendingProduct, RiskAssessment, RiskLevel
-from filter import get_fda_substances, check_tariff_rates as check_tariff_api, estimate_shelf_life as estimate_shelf_life_api
+from .models import TrendingProduct, RiskAssessment, RiskLevel
+from .filter import get_fda_substances, check_tariff_rates as check_tariff_api, estimate_shelf_life as estimate_shelf_life_api
+from .flexlog import log_message
 
 # Assesses risks based on keyword-matching with product attributes
 # Also hardcoded logic, will need adapting to real data/features
@@ -15,6 +16,7 @@ class RiskAssessmentEngine:
     # Returns a RiskAssessment based on assessed risk in all categories 
     def assess_risks(self, product: TrendingProduct) -> RiskAssessment:
         """Assess various risks associated with the product"""
+        log_message(f"[RiskAssessment] START assess_risks: {product.name}", additional_route="risk_assessment")
         
         tariff_risk = self._assess_tariff_risk(product)
         fda_concern = self._assess_fda_concern(product)
@@ -23,13 +25,19 @@ class RiskAssessmentEngine:
         
         flags = self._generate_flags(product, tariff_risk, fda_concern, supply_chain_risk, est_shelf_life=True)
         
-        return RiskAssessment(
+        assessment = RiskAssessment(
             tariff_risk=tariff_risk,
             fda_concern=fda_concern,
             supply_chain_risk=supply_chain_risk,
             competition_risk=competition_risk,
             flags=flags
         )
+        log_message(
+            f"[RiskAssessment] DONE assess_risks: {product.name} "
+            f"(tariff={tariff_risk.value}, fda={fda_concern.value}, supply={supply_chain_risk.value}, comp={competition_risk.value}, flags={len(flags)})",
+            additional_route="risk_assessment",
+        )
+        return assessment
     
     # The following functions assess risk in specific categories based on product ?tags?? idk
 
@@ -83,6 +91,7 @@ class RiskAssessmentEngine:
         potential_ingredients.extend(words)
         
         # Also check against known restricted substances
+        log_message("[RiskAssessment] Checking FDA substances list", additional_route="risk_assessment")
         substances = get_fda_substances()
         restricted_found = any(substance.lower() in text_to_check for substance in substances)
         

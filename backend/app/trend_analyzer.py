@@ -5,7 +5,8 @@ from typing import List, Dict
 from datetime import datetime
 import json
 import random
-from models import TrendingProduct, ProductCategory
+from .models import TrendingProduct, ProductCategory
+from .flexlog import log_message
 
 # Fetches trend data 
 class TrendAnalyzer:
@@ -21,21 +22,31 @@ class TrendAnalyzer:
     # Will probably need a lot of validation logic especially if we use different data sources
     def fetch_trending_products(self) -> List[TrendingProduct]:
         """Simulate fetching trending health/wellness products from various sources"""
+        log_message("[TrendAnalyzer] Fetching trending products", additional_route="trend_analyzer")
         trending_data = self._get_mock_trending_data()
+        log_message(f"[TrendAnalyzer] Raw items fetched: {len(trending_data)}", additional_route="trend_analyzer")
         products = []
         
-        for item in trending_data:
-            product = TrendingProduct(
-                name=item["name"],
-                category=ProductCategory(item["category"]),
-                description=item["description"],
-                trend_score=item["trend_score"],
-                market_growth_rate=item["market_growth_rate"],
-                consumer_interest_score=item["consumer_interest_score"],
-                source=item["source"],
-                trend_keywords=item["trend_keywords"]
-            )
-            products.append(product)
+        for idx, item in enumerate(trending_data, 1):
+            try:
+                product = TrendingProduct(
+                    name=item["name"],
+                    category=ProductCategory(item["category"]),
+                    description=item["description"],
+                    trend_score=item["trend_score"],
+                    market_growth_rate=item["market_growth_rate"],
+                    consumer_interest_score=item["consumer_interest_score"],
+                    source=item["source"],
+                    trend_keywords=item["trend_keywords"]
+                )
+                products.append(product)
+            except Exception as e:
+                product_name = item.get("name", f"item_{idx}") if isinstance(item, dict) else f"item_{idx}"
+                log_message(f"[TrendAnalyzer] Skipping invalid product payload: {product_name}", print_log=True, additional_route="trend_analyzer")
+                log_message(f"[TrendAnalyzer] Exception type: {type(e).__name__}", additional_route="trend_analyzer")
+                continue
+
+        log_message(f"[TrendAnalyzer] Valid products ready: {len(products)}", additional_route="trend_analyzer")
         
         return products
     

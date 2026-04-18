@@ -7,7 +7,7 @@ import json
 from typing import List
 from bs4 import BeautifulSoup
 from csv_data_processor import CSVDataProcessor
-from flexlog import log_message
+from .flexlog import log_message
 
 def get_fda_substances():
     """Get FDA substances with proper HTML parsing and timeout handling"""
@@ -16,29 +16,13 @@ def get_fda_substances():
     
     # Get approved food substances from FDA web interface with proper HTML parsing
     url = "https://www.hfpappexternal.fda.gov/scripts/fdcc/index.cfm?set=FoodSubstances"
-    try:
-        response = requests.get(url, timeout=15)
-        if response.status_code == 200:
-            # Use BeautifulSoup for proper HTML parsing instead of pd.read_html
-            soup = BeautifulSoup(response.text, 'html.parser')
-            
-            # Look for tables that contain substance information
-            tables = soup.find_all('table')
-            for table in tables:
-                rows = table.find_all('tr')
-                for row in rows:
-                    cells = row.find_all(['td', 'th'])
-                    for cell in cells:
-                        text = cell.get_text(strip=True)
-                        if text and len(text) > 2:  # Filter out empty/short cells
-                            substances.append(text)
-            
-            log_message(f"[filter] Found {len(substances)} substances via HTML parsing", additional_route="filter")
-        else:
-            log_message(f"[filter] FDA API returned status {response.status_code}", additional_route="filter")
-    except Exception as e:
-        log_message(f"[filter] FDA HTML parsing failed: {e}", additional_route="filter")
-        print(f"[filter] FDA HTML parsing failed: {e}")
+    response = requests.get(url)
+    if response.status_code == 200:
+        # NOTE: Disabled HTML table parsing for now.
+        # pd.read_html(response.text) has been producing FileNotFoundError with huge HTML payloads in this environment.
+        # Re-enable once we have a stable parser path for this endpoint.
+        print("[filter] FDA table parsing temporarily disabled; using other data sources for now.")
+        log_message("[filter] FDA table parsing temporarily disabled", additional_route="filter")
     
     # Get banned/restricted peptides from openFDA enforcement API
     enforcement_url = "https://api.fda.gov/food/enforcement.json?search=peptide&limit=100"
@@ -95,8 +79,10 @@ def get_fda_substances():
     substances.extend(known_category_5)
     log_message(f"[filter] Added known category 5 substances, total: {len(substances)}", additional_route="filter")
     
-    return list(set(substances))  # Remove duplicates
-            
+    unique_substances = list(set(substances))
+    log_message(f"[filter] DONE get_fda_substances: {len(unique_substances)} substances", additional_route="filter")
+    return unique_substances  # Remove duplicates
+
 def get_fda_substances_endpoint():
     substances = get_fda_substances()
     return {"substances": substances}

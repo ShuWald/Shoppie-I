@@ -31,7 +31,8 @@ class ProductEvaluator:
             trending_products = csv_processor.get_unique_products()
             log_message(f"[ProductEvaluator] Fetched {len(trending_products)} trending products from CSV", additional_route="evaluator")
         except Exception as e:
-            log_message(f"[ProductEvaluator] ERROR fetching trending products from CSV: {e}", print_log=True, additional_route="evaluator")
+            log_message("[ProductEvaluator] ERROR fetching trending products", print_log=True, additional_route="evaluator")
+            log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
             raise
         
         #2. Evaluate each product (core processing loop)
@@ -43,7 +44,8 @@ class ProductEvaluator:
                 evaluations.append(evaluation)
                 log_message(f"[ProductEvaluator] Evaluated product {idx}/{len(trending_products)}: {product.name} (score: {evaluation.pop_relevance_score:.1f})", additional_route="evaluator")
             except Exception as e:
-                log_message(f"[ProductEvaluator] ERROR evaluating product '{product.name}': {e}", print_log=True, additional_route="evaluator")
+                log_message(f"[ProductEvaluator] ERROR evaluating product '{product.name}'", print_log=True, additional_route="evaluator")
+                log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
                 continue
         
         #3. Prioritize products (grouped by score)
@@ -61,7 +63,8 @@ class ProductEvaluator:
             insights = self._generate_summary_insights(evaluations)
             log_message(f"[ProductEvaluator] Generated {len(insights)} summary insights", additional_route="evaluator")
         except Exception as e:
-            log_message(f"[ProductEvaluator] ERROR generating insights: {e}", print_log=True, additional_route="evaluator")
+            log_message("[ProductEvaluator] ERROR generating insights", print_log=True, additional_route="evaluator")
+            log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
             insights = []
         
         # Step 6: Create report
@@ -84,31 +87,51 @@ class ProductEvaluator:
         """Evaluate a single trending product"""
         
         try:
+            step = "business_rules.evaluate_product"
+            log_message(f"[ProductEvaluator] [{product.name}] START {step}", additional_route="evaluator")
             # Business rules evaluation
             business_rules = self.business_rules.evaluate_product(product)
+            log_message(f"[ProductEvaluator] [{product.name}] DONE {step}", additional_route="evaluator")
             
+            step = "risk_assessor.assess_risks"
+            log_message(f"[ProductEvaluator] [{product.name}] START {step}", additional_route="evaluator")
             # Risk assessment
             risk_assessment = self.risk_assessor.assess_risks(product)
+            log_message(f"[ProductEvaluator] [{product.name}] DONE {step}", additional_route="evaluator")
             log_message(f"[ProductEvaluator] {product.name} - tariff_risk:{risk_assessment.tariff_risk.value}, fda:{risk_assessment.fda_concern.value}, flags:{len(risk_assessment.flags)}", additional_route="evaluator")
             
+            step = "scoring_engine.calculate_pop_relevance_score"
+            log_message(f"[ProductEvaluator] [{product.name}] START {step}", additional_route="evaluator")
             # Calculate PoP relevance score
             pop_score = self.scoring_engine.calculate_pop_relevance_score(
                 product, business_rules, risk_assessment
             )
+            log_message(f"[ProductEvaluator] [{product.name}] DONE {step} -> score:{pop_score:.1f}", additional_route="evaluator")
             
+            step = "business_rules.suggest_action"
+            log_message(f"[ProductEvaluator] [{product.name}] START {step}", additional_route="evaluator")
             # Suggest action
             suggested_action = self.business_rules.suggest_action(product, business_rules)
+            log_message(f"[ProductEvaluator] [{product.name}] DONE {step} -> action:{suggested_action.value}", additional_route="evaluator")
             
+            step = "scoring_engine.generate_reasoning"
+            log_message(f"[ProductEvaluator] [{product.name}] START {step}", additional_route="evaluator")
             # Generate reasoning
             reasoning = self.scoring_engine.generate_reasoning(
                 product, business_rules, risk_assessment, pop_score
             )
+            log_message(f"[ProductEvaluator] [{product.name}] DONE {step}", additional_route="evaluator")
             
+            step = "scoring_engine.calculate_confidence_score"
+            log_message(f"[ProductEvaluator] [{product.name}] START {step}", additional_route="evaluator")
             # Calculate confidence
             confidence = self.scoring_engine.calculate_confidence_score(
                 product, business_rules, risk_assessment
             )
+            log_message(f"[ProductEvaluator] [{product.name}] DONE {step} -> confidence:{confidence:.1f}", additional_route="evaluator")
             
+            step = "ProductEvaluation(...)"
+            log_message(f"[ProductEvaluator] [{product.name}] START {step}", additional_route="evaluator")
             return ProductEvaluation(
                 product=product,
                 pop_relevance_score=pop_score,
@@ -119,7 +142,9 @@ class ProductEvaluator:
                 confidence_score=confidence
             )
         except Exception as e:
-            log_message(f"[ProductEvaluator] CRITICAL ERROR in _evaluate_single_product for '{product.name}': {e}", print_log=True, additional_route="evaluator")
+            log_message(f"[ProductEvaluator] CRITICAL ERROR in _evaluate_single_product for '{product.name}' at step '{step}'", print_log=True, additional_route="evaluator")
+            # Intentionally not logging {e} text here because some exceptions include massive HTML payloads.
+            log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
             raise
     
     def _generate_summary_insights(self, evaluations: List[ProductEvaluation]) -> List[str]:
@@ -169,7 +194,8 @@ class ProductEvaluator:
             
             log_message(f"[ProductEvaluator] Successfully generated {len(insights)} insights", additional_route="evaluator")
         except Exception as e:
-            log_message(f"[ProductEvaluator] ERROR generating insights: {e}", print_log=True, additional_route="evaluator")
+            log_message("[ProductEvaluator] ERROR generating insights", print_log=True, additional_route="evaluator")
+            log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
         
         return insights
 
