@@ -31,13 +31,15 @@ import time
 import random
 import argparse
 import logging
-from datetime import datetime
-from pathlib import Path
+import os
+from datetime import datetime, timedelta
 from typing import Optional
+from pathlib import Path
 
 import requests
 import pandas as pd
 from bs4 import BeautifulSoup
+from dynamic_family_extractor import DynamicFamilyExtractor
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(
@@ -50,53 +52,11 @@ log = logging.getLogger(__name__)
 # ── Constants ─────────────────────────────────────────────────────────────────
 POP_DATA_DIR = Path("pop_data")
 
-# Token-based family inference — same rules as google_trends_scraper.py.
-# Each entry: (tokens_that_must_all_appear_in_description, family, base_search_keyword)
-INFER_RULES: list[tuple[list[str], str, str]] = [
-    # Ginger Honey Crystals — before generic Ginger rules
-    (["HONEY", "CYTL"],              "Ginger Honey Crystals", "Prince of Peace ginger honey crystals"),
-    (["GINGER", "H", "CYTL"],        "Ginger Honey Crystals", "Prince of Peace ginger honey crystals"),
-    # American Ginseng subtypes — specific before generic GSG
-    (["GSG", "TEA"],                 "American Ginseng Tea",   "Prince of Peace American ginseng tea"),
-    (["GSG", "CANDY"],               "American Ginseng Candy", "American ginseng candy"),
-    (["GSG", "SLICES"],              "American Ginseng Root",  "American ginseng slices"),
-    (["GSG"],                        "American Ginseng Root",  "American ginseng root"),
-    # Confections
-    (["FERRERO"],                    "European Confections",   "Ferrero Rocher"),
-    (["LOACKER"],                    "Loacker",                "Loacker Gran Pasticceria"),
-    # Ginger Chews
-    (["GINGER", "CHEWS"],            "Ginger Chews",           "Prince of Peace ginger chews"),
-    # Asian Pantry
-    (["MAZOLA"],                     "Asian Pantry",            "Mazola corn oil"),
-    (["TOTOLE"],                     "Asian Pantry",            "Totole chicken bouillon"),
-    # Tiger Balm — patch before generic
-    (["TIGER", "BALM", "PATCH"],     "Tiger Balm",             "Tiger Balm patch"),
-    (["TIGER", "BALM"],              "Tiger Balm",             "Tiger Balm"),
-    # Herbal Health Teas — specific HT variants before generic tea tokens
-    (["HT", "BLOOD", "PRESSURE"],    "Herbal Health Teas",     "Prince of Peace blood pressure tea"),
-    (["HT", "BLOOD", "SUGAR"],       "Herbal Health Teas",     "Prince of Peace blood sugar tea"),
-    (["HT", "CHOLESTEROL"],          "Herbal Health Teas",     "Prince of Peace cholesterol tea"),
-    (["JASMINE"],                    "Herbal Health Teas",     "Prince of Peace organic jasmine tea"),
-    (["OOLONG"],                     "Herbal Health Teas",     "Prince of Peace organic oolong tea"),
-    (["WHITE", "TEA"],               "Herbal Health Teas",     "Prince of Peace organic white tea"),
-    (["GREEN", "TEA"],               "Herbal Health Teas",     "Prince of Peace organic green tea"),
-]
+# Dynamic family extractor - replaces hardcoded INFER_RULES
+DYNAMIC_EXTRACTOR = DynamicFamilyExtractor()
 
-# Which scraping sources to use per family.
-# 'off'   = Open Food Facts (packaged foods, confections, pantry staples)
-# 'iherb' = iHerb (herbal/supplement products, topicals)
-CATEGORY_SOURCES: dict[str, tuple[str, ...]] = {
-    "American Ginseng Tea":   ("off", "iherb"),
-    "American Ginseng Candy": ("off", "iherb"),
-    "American Ginseng Root":  ("off", "iherb"),
-    "European Confections":   ("off",),
-    "Loacker":                ("off",),
-    "Ginger Chews":           ("off", "iherb"),
-    "Ginger Honey Crystals":  ("off", "iherb"),
-    "Asian Pantry":           ("off",),
-    "Tiger Balm":             ("iherb",),
-    "Herbal Health Teas":     ("off", "iherb"),
-}
+# Get category sources from dynamic extractor
+CATEGORY_SOURCES = DYNAMIC_EXTRACTOR.get_category_sources()
 
 # Flavor/variant keywords to append to the base search query when found
 # in the description, so iHerb/OFF searches are product-specific.
@@ -123,88 +83,16 @@ USER_AGENTS = [
 # Step 1 — Load products from POP xlsx and build the PRODUCTS list
 # ═════════════════════════════════════════════════════════════════════════════
 
-def _tokenize(text: str) -> set[str]:
-    return set(re.split(r"\W+", text.upper()))
-
-
-def _infer_family(description: str) -> Optional[tuple[str, str]]:
-    """
-    Return (family, base_keyword) for a description, or None if unmatched.
-    """
-    if not isinstance(description, str) or not description.strip():
-        return None
-    tokens = _tokenize(description)
-    for match_tokens, family, base_kw in INFER_RULES:
-        if all(t in tokens for t in match_tokens):
-            return family, base_kw
-    return None
-
-
-def _build_search_query(description: str, base_kw: str) -> str:
-    """
-    Append flavor/variant and size tokens from the description to the base
-    keyword so the query is as specific as possible.
-    """
-    desc_lower = description.lower()
-
-    # Detect flavor/variant
-    flavor = next((f for f in FLAVOR_KEYWORDS if f in desc_lower), "")
-
-    # Detect first clean size token
-    size_match = SIZE_RE.search(description)
-    size = size_match.group(1).lower() if size_match else ""
-
-    parts = [base_kw]
-    if flavor and flavor not in base_kw.lower():
-        parts.append(flavor)
-    if size:
-        parts.append(size)
-    return " ".join(parts)
-
-
 def load_products() -> list[dict]:
     """
-    Read POP_ItemSpecMaster.xlsx, infer family + search queries from each
-    description, and return a PRODUCTS-style list of dicts ready for scraping.
+    Load products using dynamic family extraction from POP xlsx files.
+    Returns a PRODUCTS-style list of dicts ready for scraping.
     """
-    spec_path = POP_DATA_DIR / "POP_ItemSpecMaster.xlsx"
-    if not spec_path.exists():
-        raise FileNotFoundError(
-            f"Cannot find {spec_path}\n"
-            f"Place your POP xlsx files inside a folder named '{POP_DATA_DIR}/' "
-            f"next to this script."
-        )
-
-    log.info(f"Loading products from {spec_path}")
-    spec = pd.read_excel(spec_path)
-    spec.columns = spec.columns.str.strip()
-    spec["Description"] = spec["Description"].astype(str).str.strip()
-
-    products = []
-    skipped  = []
-    for _, row in spec.iterrows():
-        desc   = row["Description"]
-        result = _infer_family(desc)
-        if not result:
-            skipped.append(desc)
-            continue
-
-        family, base_kw = result
-        sources = CATEGORY_SOURCES.get(family, ("off",))
-        query   = _build_search_query(desc, base_kw)
-
-        products.append({
-            "name":        desc,
-            "category":    family,
-            "off_query":   query if "off" in sources else None,
-            "iherb_query": query if "iherb" in sources else None,
-        })
-
-    if skipped:
-        log.warning(f"  ↳ {len(skipped)} descriptions not matched (skipped):")
-        for d in skipped:
-            log.warning(f"      • {d}")
-
+    log.info("Loading products with dynamic family extraction...")
+    
+    # Use the dynamic extractor to build products list
+    products = DYNAMIC_EXTRACTOR.build_products_list()
+    
     log.info(f"  ↳ {len(products)} products loaded across "
              f"{len({p['category'] for p in products})} families")
     return products
@@ -222,8 +110,13 @@ class OpenFoodFactsScraper:
 
     SEARCH_URL = "https://world.openfoodfacts.org/cgi/search.pl"
 
-    def __init__(self, delay: float = 1.0):
+    def __init__(self, delay: float = 1.0, cache_dir: str = "cache", cache_hours: int = 24):
         self.delay = delay
+        self.cache_dir = cache_dir
+        self.cache_hours = cache_hours
+        
+        # Create cache directory if it doesn't exist
+        os.makedirs(cache_dir, exist_ok=True)
 
     def search(self, query: str) -> Optional[dict]:
         """Search OFF and return the best-matching product dict, or None."""
@@ -284,11 +177,92 @@ class OpenFoodFactsScraper:
             "notes":             "",
         }
 
-    def scrape_all(self, products: list[dict]) -> list[dict]:
+    def _get_cache_filename(self) -> str:
+        """Generate cache filename for Open Food Facts data."""
+        return os.path.join(self.cache_dir, "open_food_facts_cache.csv")
+
+    def _is_cache_valid(self, cache_path: str) -> bool:
+        """Check if cache file exists and is within the validity period."""
+        if not os.path.exists(cache_path):
+            return False
+        
+        file_time = datetime.fromtimestamp(os.path.getmtime(cache_path))
+        expiry_time = datetime.now() - timedelta(hours=self.cache_hours)
+        
+        return file_time > expiry_time
+
+    def _load_from_cache(self, products: list[dict]) -> Optional[list[dict]]:
+        """Load Open Food Facts data from cache if valid."""
+        cache_path = self._get_cache_filename()
+        
+        if not self._is_cache_valid(cache_path):
+            log.info("Open Food Facts cache not found or expired, will fetch fresh data")
+            return None
+        
+        try:
+            log.info(f"Loading Open Food Facts data from cache: {cache_path}")
+            df = pd.read_csv(cache_path)
+            
+            # Filter cached data for current products
+            cached_rows = []
+            product_names = [p["name"] for p in products if p.get("off_query")]
+            
+            for _, row in df.iterrows():
+                if row.get("product_name") in product_names:
+                    cached_rows.append(row.to_dict())
+            
+            log.info(f"✓ Loaded {len(cached_rows)} Open Food Facts rows from cache")
+            return cached_rows
+            
+        except Exception as exc:
+            log.warning(f"Failed to load Open Food Facts from cache: {exc}")
+            return None
+
+    def _save_to_cache(self, rows: list[dict]) -> None:
+        """Save Open Food Facts data to cache file."""
+        cache_path = self._get_cache_filename()
+        
+        try:
+            log.info(f"Saving Open Food Facts data to cache: {cache_path}")
+            df = pd.DataFrame(rows)
+            df.to_csv(cache_path, index=False, encoding="utf-8-sig")
+            log.info("✓ Open Food Facts data cached successfully")
+        except Exception as exc:
+            log.warning(f"Failed to save Open Food Facts to cache: {exc}")
+
+    def scrape_all(self, products: list[dict], force_refresh: bool = False) -> list[dict]:
+        rows = []
         items = [p for p in products if p.get("off_query")]
         log.info(f"Open Food Facts: scraping {len(items)} products...")
-        return [self.scrape_product(p["name"], p["off_query"], p["category"])
-                for p in items]
+        
+        # Try to load from cache unless force refresh is requested
+        if not force_refresh:
+            cached_data = self._load_from_cache(products)
+            if cached_data is not None:
+                # Add missing products that weren't in cache
+                cached_names = {row.get("product_name") for row in cached_data}
+                missing_items = [p for p in items if p["name"] not in cached_names]
+                
+                if missing_items:
+                    log.info(f"Fetching {len(missing_items)} missing products from API...")
+                    for p in missing_items:
+                        rows.append(self.scrape_product(p["name"], p["off_query"], p["category"]))
+                    
+                    # Update cache with new data
+                    all_rows = cached_data + rows
+                    self._save_to_cache(all_rows)
+                    return all_rows
+                else:
+                    log.info("Using cached Open Food Facts data (use --force-refresh to fetch fresh data)")
+                    return cached_data
+        
+        # Fetch fresh data
+        for p in items:
+            rows.append(self.scrape_product(p["name"], p["off_query"], p["category"]))
+        
+        # Save fresh data to cache
+        self._save_to_cache(rows)
+        return rows
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -298,15 +272,21 @@ class OpenFoodFactsScraper:
 class iHerbScraper:
     """
     Scrapes ingredient lists from iHerb.com product pages using BeautifulSoup.
+    iHerb is much more scraper-friendly than Amazon.
     """
 
     SEARCH_URL = "https://www.iherb.com/search?kw={query}"
     BASE_URL   = "https://www.iherb.com"
 
-    def __init__(self, delay: float = 2.5):
+    def __init__(self, delay: float = 2.5, cache_dir: str = "cache", cache_hours: int = 24):
         self.delay   = delay
+        self.cache_dir = cache_dir
+        self.cache_hours = cache_hours
         self.session = requests.Session()
         self.session.headers.update(self._headers())
+        
+        # Create cache directory if it doesn't exist
+        os.makedirs(cache_dir, exist_ok=True)
 
     @staticmethod
     def _headers() -> dict:
@@ -420,11 +400,92 @@ class iHerbScraper:
             "notes":             url[:200],
         }
 
-    def scrape_all(self, products: list[dict]) -> list[dict]:
+    def _get_cache_filename(self) -> str:
+        """Generate cache filename for iHerb data."""
+        return os.path.join(self.cache_dir, "iherb_cache.csv")
+
+    def _is_cache_valid(self, cache_path: str) -> bool:
+        """Check if cache file exists and is within the validity period."""
+        if not os.path.exists(cache_path):
+            return False
+        
+        file_time = datetime.fromtimestamp(os.path.getmtime(cache_path))
+        expiry_time = datetime.now() - timedelta(hours=self.cache_hours)
+        
+        return file_time > expiry_time
+
+    def _load_from_cache(self, products: list[dict]) -> Optional[list[dict]]:
+        """Load iHerb data from cache if valid."""
+        cache_path = self._get_cache_filename()
+        
+        if not self._is_cache_valid(cache_path):
+            log.info("iHerb cache not found or expired, will fetch fresh data")
+            return None
+        
+        try:
+            log.info(f"Loading iHerb data from cache: {cache_path}")
+            df = pd.read_csv(cache_path)
+            
+            # Filter cached data for current products
+            cached_rows = []
+            product_names = [p["name"] for p in products if p.get("iherb_query")]
+            
+            for _, row in df.iterrows():
+                if row.get("product_name") in product_names:
+                    cached_rows.append(row.to_dict())
+            
+            log.info(f"✓ Loaded {len(cached_rows)} iHerb rows from cache")
+            return cached_rows
+            
+        except Exception as exc:
+            log.warning(f"Failed to load iHerb from cache: {exc}")
+            return None
+
+    def _save_to_cache(self, rows: list[dict]) -> None:
+        """Save iHerb data to cache file."""
+        cache_path = self._get_cache_filename()
+        
+        try:
+            log.info(f"Saving iHerb data to cache: {cache_path}")
+            df = pd.DataFrame(rows)
+            df.to_csv(cache_path, index=False, encoding="utf-8-sig")
+            log.info("✓ iHerb data cached successfully")
+        except Exception as exc:
+            log.warning(f"Failed to save iHerb to cache: {exc}")
+
+    def scrape_all(self, products: list[dict], force_refresh: bool = False) -> list[dict]:
+        rows = []
         items = [p for p in products if p.get("iherb_query")]
         log.info(f"iHerb: scraping {len(items)} products...")
-        return [self.scrape_product(p["name"], p["iherb_query"], p["category"])
-                for p in items]
+        
+        # Try to load from cache unless force refresh is requested
+        if not force_refresh:
+            cached_data = self._load_from_cache(products)
+            if cached_data is not None:
+                # Add missing products that weren't in cache
+                cached_names = {row.get("product_name") for row in cached_data}
+                missing_items = [p for p in items if p["name"] not in cached_names]
+                
+                if missing_items:
+                    log.info(f"Fetching {len(missing_items)} missing products from iHerb...")
+                    for p in missing_items:
+                        rows.append(self.scrape_product(p["name"], p["iherb_query"], p["category"]))
+                    
+                    # Update cache with new data
+                    all_rows = cached_data + rows
+                    self._save_to_cache(all_rows)
+                    return all_rows
+                else:
+                    log.info("Using cached iHerb data (use --force-refresh to fetch fresh data)")
+                    return cached_data
+        
+        # Fetch fresh data
+        for p in items:
+            rows.append(self.scrape_product(p["name"], p["iherb_query"], p["category"]))
+        
+        # Save fresh data to cache
+        self._save_to_cache(rows)
+        return rows
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -492,16 +553,18 @@ def main(args: argparse.Namespace) -> None:
     log.info("=" * 60)
 
     products   = load_products()
-    off_rows   = []
-    iherb_rows = []
+    off_rows    = []
+    iherb_rows  = []
 
     if not args.skip_off:
-        off_rows = OpenFoodFactsScraper(delay=args.off_delay).scrape_all(products)
+        scraper    = OpenFoodFactsScraper(delay=args.off_delay, cache_dir=args.cache_dir, cache_hours=args.cache_hours)
+        off_rows   = scraper.scrape_all(products, force_refresh=args.force_refresh)
     else:
         log.info("Skipping Open Food Facts (--skip-off)")
 
     if not args.skip_iherb:
-        iherb_rows = iHerbScraper(delay=args.iherb_delay).scrape_all(products)
+        scraper    = iHerbScraper(delay=args.iherb_delay, cache_dir=args.cache_dir, cache_hours=args.cache_hours)
+        iherb_rows = scraper.scrape_all(products, force_refresh=args.force_refresh)
     else:
         log.info("Skipping iHerb (--skip-iherb)")
 
