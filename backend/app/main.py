@@ -15,6 +15,13 @@ def initialize():
 def test():
     return {"message": "test message"}
 
+@app.get("/some_endpoint")
+def some_logic():
+    payload = {}
+    # do some logic
+    return payload
+
+
 # tests all routing/related functionality 
 def testing():
     pass
