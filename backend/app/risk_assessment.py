@@ -1,3 +1,4 @@
+import re
 from typing import List
 from .models import TrendingProduct, RiskAssessment, RiskLevel
 from .filter import get_fda_substances, check_tariff_rates as check_tariff_api, estimate_shelf_life as estimate_shelf_life_api
@@ -20,7 +21,7 @@ class RiskAssessmentEngine:
         supply_chain_risk = self._assess_supply_chain_risk(product)
         competition_risk = self._assess_competition_risk(product)
         
-        flags = self._generate_flags(product, tariff_risk, fda_concern, supply_chain_risk)
+        flags = self._generate_flags(product, tariff_risk, fda_concern, supply_chain_risk, est_shelf_life=True)
         
         return RiskAssessment(
             tariff_risk=tariff_risk,
@@ -58,7 +59,8 @@ class RiskAssessmentEngine:
             try:
                 acceptable = check_tariff_api(inferred_country)
                 return RiskLevel.LOW if acceptable else RiskLevel.HIGH
-            except:
+            except Exception as e:
+                print(f"[RiskAssessment DEBUG] check_tariff_rates failed for '{inferred_country}': {e}")
                 # Fall back to category-based assessment if API fails
                 pass
         
@@ -123,7 +125,7 @@ class RiskAssessmentEngine:
     
     # Generate risk flags based on the assessed risks throughout categories
     def _generate_flags(self, product: TrendingProduct, tariff_risk: RiskLevel, 
-                       fda_concern: RiskLevel, supply_chain_risk: RiskLevel) -> List[str]:
+                       fda_concern: RiskLevel, supply_chain_risk: RiskLevel, est_shelf_life: bool = True) -> List[str]:
         """Generate specific risk flags"""
         flags = []
         
@@ -148,12 +150,13 @@ class RiskAssessmentEngine:
         # Simple extraction - look for common ingredient patterns
         potential_ingredients = re.findall(r'\b(?:organic|natural|herbal|ginger|tea|ginseng|honey|mushroom|turmeric|extract|powder|capsule|tablet)\b', text_to_check)
         
-        if potential_ingredients:
+        if est_shelf_life and potential_ingredients:
             try:
                 shelf_life_acceptable = estimate_shelf_life_api(potential_ingredients)
                 if not shelf_life_acceptable:
                     flags.append("Short shelf life - may require special handling or preservatives")
-            except:
+            except Exception as e:
+                print(f"[RiskAssessment DEBUG] estimate_shelf_life_api failed: {e}")
                 # If API fails, skip shelf life check
                 pass
         
