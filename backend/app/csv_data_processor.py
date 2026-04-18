@@ -3,7 +3,7 @@ CSV Data Processor - Converts webscraped CSV data to TrendingProduct objects
 """
 import pandas as pd
 from typing import List
-from models import TrendingProduct, ProductCategory
+from .models import TrendingProduct, ProductCategory
 import re
 
 class CSVDataProcessor:
