@@ -54,6 +54,67 @@ export default function Home() {
       : "text-purple-600 bg-purple-100";
   };
 
+  const parseInsightCard = (insight) => {
+    // Parse insight strings into structured card data
+    if (insight.includes("Most trending category")) {
+      const match = insight.match(/Most trending category: (.+) \((\d+) products\)/);
+      return {
+        title: "Top Category",
+        value: match ? match[1] : "N/A",
+        subtitle: match ? `${match[2]} products` : "No data",
+        valueClass: "text-base font-bold" // Smaller font for category names
+      };
+    }
+    if (insight.includes("Average PoP relevance score")) {
+      const match = insight.match(/Average PoP relevance score: ([\d.]+)/);
+      return {
+        title: "Avg PoP Score",
+        value: match ? parseFloat(match[1]).toFixed(1) : "N/A",
+        subtitle: "across all products",
+        valueClass: "text-2xl font-bold" // Match READY FOR DISTRIBUTION tile spacing
+      };
+    }
+    if (insight.includes("Products ready for distribution")) {
+      const match = insight.match(/Products ready for distribution: (\d+)/);
+      return {
+        title: "Ready for Distribution",
+        value: match ? match[1] : "0",
+        subtitle: "products"
+      };
+    }
+    if (insight.includes("Products requiring development")) {
+      const match = insight.match(/Products requiring development: (\d+)/);
+      return {
+        title: "Needs Development",
+        value: match ? match[1] : "0",
+        subtitle: "products"
+      };
+    }
+    if (insight.includes("High-risk products")) {
+      const match = insight.match(/High-risk products requiring careful review: (\d+)/);
+      return {
+        title: "High-Risk Review",
+        value: match ? match[1] : "0",
+        subtitle: match && match[1] === "1" ? "product flagged" : "products flagged"
+      };
+    }
+    if (insight.includes("Top opportunity")) {
+      const match = insight.match(/Top opportunity: (.+) \(Score: ([\d.]+)\)/);
+      return {
+        title: "Top Opportunity",
+        value: match ? match[1] : "N/A",
+        subtitle: match ? `PoP score ${match[2]}` : "No score",
+        valueClass: "text-base font-bold" // Smaller font for long product names
+      };
+    }
+    // Default fallback
+    return {
+      title: "Insight",
+      value: insight,
+      subtitle: ""
+    };
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
@@ -87,35 +148,55 @@ export default function Home() {
       <header className="bg-white shadow-sm border-b">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                Prince of Peace Trending Products Evaluator
-              </h1>
-              <p className="text-sm text-gray-600 mt-1">
-                Smart shopping assistant for business buyers
-              </p>
+            <div className="flex items-center space-x-4">
+              {/* Prince of Peace Logo */}
+              <img 
+                src="/PoPLogo.webp" 
+                alt="Prince of Peace Logo" 
+                className="h-12 w-auto object-contain"
+              />
+              <div>
+                <h1 className="text-2xl font-bold text-gray-900">
+                  Product Trend Dashboard
+                </h1>
+                <p className="text-sm text-gray-600 mt-1">
+                  Smart shopping assistant for business buyers
+                </p>
+              </div>
             </div>
-            <button 
-              onClick={fetchTrendingProducts}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
-            >
-              Refresh Analysis
-            </button>
+            <div className="flex items-center space-x-3">
+              <button 
+                onClick={fetchTrendingProducts}
+                className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+              >
+                Refresh Analysis
+              </button>
+              {/* User Profile Icon */}
+              <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center hover:bg-gray-300 transition-colors cursor-pointer">
+                <svg className="w-6 h-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </div>
+            </div>
           </div>
         </div>
       </header>
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Summary Insights */}
-        <div className="bg-white rounded-lg shadow p-6 mb-8">
+        <div className="mb-8">
           <h2 className="text-lg font-semibold text-gray-900 mb-4">Key Insights</h2>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {report.summary_insights.map((insight, index) => (
-              <div key={index} className="flex items-start space-x-2">
-                <div className="w-2 h-2 bg-blue-600 rounded-full mt-2 flex-shrink-0"></div>
-                <p className="text-sm text-gray-700">{insight}</p>
-              </div>
-            ))}
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            {report.summary_insights.map((insight, index) => {
+              const cardData = parseInsightCard(insight);
+              return (
+                <div key={index} className="bg-white rounded-lg shadow p-4 border border-gray-200 hover:shadow-md transition-shadow">
+                  <p className="text-sm text-gray-500 uppercase tracking-wide">{cardData.title}</p>
+                  <p className={`${cardData.valueClass || "text-2xl font-bold"} text-gray-900 mt-1`}>{cardData.value}</p>
+                  <p className="text-sm text-gray-600 mt-1">{cardData.subtitle}</p>
+                </div>
+              );
+            })}
           </div>
         </div>
 
