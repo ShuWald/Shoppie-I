@@ -1,5 +1,6 @@
 from typing import List
 from .models import TrendingProduct, RiskAssessment, RiskLevel
+from .filter import get_fda_substances, check_tariff_rates as check_tariff_api, estimate_shelf_life as estimate_shelf_life_api
 
 # Assesses risks based on keyword-matching with product attributes
 # Also hardcoded logic, will need adapting to real data/features
@@ -33,15 +34,58 @@ class RiskAssessmentEngine:
 
     def _assess_tariff_risk(self, product: TrendingProduct) -> RiskLevel:
         """Assess tariff risk based on product category and likely sourcing"""
-        # Higher risk for products likely sourced from high-tariff countries
+        # Try to infer country from product data
+        text_to_check = f"{product.name} {product.description} {' '.join(product.trend_keywords)}".lower()
+        
+        # Common sourcing countries for these products
+        country_mapping = {
+            "china": "china",
+            "indian": "india", 
+            "vietnam": "vietnam",
+            "thailand": "thailand",
+            "japan": "japan",
+            "korea": "south korea"
+        }
+        
+        inferred_country = None
+        for keyword, country in country_mapping.items():
+            if keyword in text_to_check:
+                inferred_country = country
+                break
+        
+        # If we can infer a country, use filter.py's check_tariff_rates API
+        if inferred_country:
+            try:
+                acceptable = check_tariff_api(inferred_country)
+                return RiskLevel.LOW if acceptable else RiskLevel.HIGH
+            except:
+                # Fall back to category-based assessment if API fails
+                pass
+        
+        # Default category-based assessment (keep the hardcoded logic)
         high_risk_categories = ["herbal_supplement", "tea"]
-        if product.category in high_risk_categories:
+        if product.category.value in high_risk_categories:
             return RiskLevel.MEDIUM
+        
         return RiskLevel.LOW
     
     def _assess_fda_concern(self, product: TrendingProduct) -> RiskLevel:
         """Assess FDA regulatory concerns"""
+        # Extract potential ingredients from product description and keywords
         text_to_check = f"{product.name} {product.description} {' '.join(product.trend_keywords)}".lower()
+        
+        # Simple ingredient extraction - split on common separators
+        potential_ingredients = []
+        # Look for common ingredient patterns
+        words = re.findall(r'\b\w+\b', text_to_check)
+        potential_ingredients.extend(words)
+        
+        # Also check against known restricted substances
+        substances = get_fda_substances()
+        restricted_found = any(substance.lower() in text_to_check for substance in substances)
+        
+        if restricted_found:
+            return RiskLevel.HIGH
         
         for concern_keyword in self.fda_concern_keywords:
             if concern_keyword in text_to_check:
@@ -97,6 +141,21 @@ class RiskAssessmentEngine:
             flags.append("Complex supply chain - multiple suppliers needed")
         elif supply_chain_risk == RiskLevel.MEDIUM:
             flags.append("Supply chain complexity - supplier verification needed")
+        
+        # Check shelf life concerns
+        # Extract potential ingredients from product description
+        text_to_check = f"{product.name} {product.description} {' '.join(product.trend_keywords)}".lower()
+        # Simple extraction - look for common ingredient patterns
+        potential_ingredients = re.findall(r'\b(?:organic|natural|herbal|ginger|tea|ginseng|honey|mushroom|turmeric|extract|powder|capsule|tablet)\b', text_to_check)
+        
+        if potential_ingredients:
+            try:
+                shelf_life_acceptable = estimate_shelf_life_api(potential_ingredients)
+                if not shelf_life_acceptable:
+                    flags.append("Short shelf life - may require special handling or preservatives")
+            except:
+                # If API fails, skip shelf life check
+                pass
         
         # Add specific flags based on product characteristics
         text_to_check = f"{product.name} {product.description}".lower()
