@@ -501,11 +501,19 @@ class GoogleTrendsScraper:
         collected["suggestions"]        = self.get_suggestions()
         collected["trending_page"]      = self.scrape_trending_page()
 
+<<<<<<< HEAD
+=======
+        # Always write CSV
+>>>>>>> 65058cacd440b50174dfac8e06cec3ee80be4dbc
         csv_path = output_path.replace(".xlsx", ".csv") if output_path.endswith(".xlsx") else output_path
         if not csv_path.endswith(".csv"):
             csv_path += ".csv"
         self.export_to_csv(csv_path, collected)
 
+<<<<<<< HEAD
+=======
+        # Also write Excel unless --csv-only flag is set
+>>>>>>> 65058cacd440b50174dfac8e06cec3ee80be4dbc
         if not csv_only:
             xlsx_path = output_path if output_path.endswith(".xlsx") else output_path.replace(".csv", ".xlsx")
             self.export_to_excel(xlsx_path, collected)
@@ -514,6 +522,7 @@ class GoogleTrendsScraper:
         log.info("Scrape complete.")
         log.info("=" * 60)
 
+<<<<<<< HEAD
     def get_trending_products_for_evaluator(self, csv_path: str = "trends_data.csv") -> list:
         """Get TrendingProduct objects for evaluator integration"""
         from csv_data_processor import CSVDataProcessor
@@ -526,6 +535,8 @@ class GoogleTrendsScraper:
         except Exception as e:
             log.error(f"Error getting products for evaluator: {e}")
             return []
+=======
+>>>>>>> 65058cacd440b50174dfac8e06cec3ee80be4dbc
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 

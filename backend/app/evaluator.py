@@ -1,15 +1,14 @@
 from typing import List
 from datetime import datetime
-from models import (
+from .models import (
     TrendingProduct, ProductEvaluation, TrendingReport, 
     BusinessRuleEvaluation, RiskAssessment, SuggestedAction
 )
-from trend_analyzer import TrendAnalyzer
-from business_rules import BusinessRulesEngine
-from risk_assessment import RiskAssessmentEngine
-from scoring import ScoringEngine
-from flexlog import log_message
-from csv_data_processor import CSVDataProcessor
+from .trend_analyzer import TrendAnalyzer
+from .business_rules import BusinessRulesEngine
+from .risk_assessment import RiskAssessmentEngine
+from .scoring import ScoringEngine
+from .flexlog import log_message
 
 #Pipeline manager for decision-making process
 class ProductEvaluator:
