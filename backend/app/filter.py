@@ -6,7 +6,7 @@ import re
 import json
 from typing import List
 from bs4 import BeautifulSoup
-from csv_data_processor import CSVDataProcessor
+from .csv_data_processor import CSVDataProcessor
 from .flexlog import log_message
 
 def get_fda_substances():
