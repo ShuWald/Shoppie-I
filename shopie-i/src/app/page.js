@@ -200,6 +200,238 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Charts and Graphs */}
+        <div className="mb-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            
+            {/* POP RELEVANCE SCORES BY PRODUCT - Horizontal Bar Chart */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">POP RELEVANCE SCORES BY PRODUCT</h3>
+              <div className="space-y-3">
+                {report.high_priority_products.map((evaluation, index) => (
+                  <div key={index} className="flex items-center">
+                    <div className="w-32 text-sm text-gray-600 truncate">{evaluation.product.name}</div>
+                    <div className="flex-1 mx-3">
+                      <div className="bg-gray-200 rounded-full h-6 relative">
+                        <div 
+                          className="bg-green-500 h-6 rounded-full flex items-center justify-end pr-2"
+                          style={{width: `${evaluation.pop_relevance_score}%`}}
+                        >
+                          <span className="text-xs text-white font-semibold">{evaluation.pop_relevance_score.toFixed(1)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {report.medium_priority_products.map((evaluation, index) => (
+                  <div key={`med-${index}`} className="flex items-center">
+                    <div className="w-32 text-sm text-gray-600 truncate">{evaluation.product.name}</div>
+                    <div className="flex-1 mx-3">
+                      <div className="bg-gray-200 rounded-full h-6 relative">
+                        <div 
+                          className="bg-yellow-500 h-6 rounded-full flex items-center justify-end pr-2"
+                          style={{width: `${evaluation.pop_relevance_score}%`}}
+                        >
+                          <span className="text-xs text-white font-semibold">{evaluation.pop_relevance_score.toFixed(1)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {report.low_priority_products.filter(p => p.pop_relevance_score >= 50).map((evaluation, index) => (
+                  <div key={`low-${index}`} className="flex items-center">
+                    <div className="w-32 text-sm text-gray-600 truncate">{evaluation.product.name}</div>
+                    <div className="flex-1 mx-3">
+                      <div className="bg-gray-200 rounded-full h-6 relative">
+                        <div 
+                          className="bg-orange-500 h-6 rounded-full flex items-center justify-end pr-2"
+                          style={{width: `${evaluation.pop_relevance_score}%`}}
+                        >
+                          <span className="text-xs text-white font-semibold">{evaluation.pop_relevance_score.toFixed(1)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-center space-x-6 mt-4">
+                <div className="flex items-center">
+                  <div className="w-3 h-3 bg-green-500 rounded-full mr-2"></div>
+                  <span className="text-xs text-gray-600">High Priority</span>
+                </div>
+                <div className="flex items-center">
+                  <div className="w-3 h-3 bg-yellow-500 rounded-full mr-2"></div>
+                  <span className="text-xs text-gray-600">Medium Priority</span>
+                </div>
+                <div className="flex items-center">
+                  <div className="w-3 h-3 bg-orange-500 rounded-full mr-2"></div>
+                  <span className="text-xs text-gray-600">Needs Development</span>
+                </div>
+              </div>
+            </div>
+
+            {/* CATEGORY DISTRIBUTION - Donut Chart */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">CATEGORY DISTRIBUTION</h3>
+              <div className="flex items-center justify-center">
+                <div className="relative w-48 h-48">
+                  {/* Simple donut chart using CSS */}
+                  <div className="absolute inset-0 rounded-full border-8 border-blue-500 border-r-transparent border-b-transparent transform rotate-45"></div>
+                  <div className="absolute inset-0 rounded-full border-8 border-green-500 border-l-transparent border-b-transparent transform -rotate-45"></div>
+                  <div className="absolute inset-0 rounded-full border-8 border-yellow-500 border-t-transparent border-r-transparent transform rotate-12"></div>
+                  <div className="absolute inset-0 rounded-full border-8 border-purple-500 border-l-transparent border-t-transparent transform -rotate-12"></div>
+                  <div className="absolute inset-8 bg-white rounded-full flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-gray-900">{report.total_products_evaluated}</div>
+                      <div className="text-xs text-gray-600">Total</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="ml-8 space-y-2">
+                  <div className="flex items-center">
+                    <div className="w-3 h-3 bg-blue-500 rounded-full mr-2"></div>
+                    <span className="text-sm text-gray-700">Herbal supplement</span>
+                  </div>
+                  <div className="flex items-center">
+                    <div className="w-3 h-3 bg-green-500 rounded-full mr-2"></div>
+                    <span className="text-sm text-gray-700">Beverage</span>
+                  </div>
+                  <div className="flex items-center">
+                    <div className="w-3 h-3 bg-yellow-500 rounded-full mr-2"></div>
+                    <span className="text-sm text-gray-700">Functional food</span>
+                  </div>
+                  <div className="flex items-center">
+                    <div className="w-3 h-3 bg-purple-500 rounded-full mr-2"></div>
+                    <span className="text-sm text-gray-700">Topical</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* MARKET GROWTH VS CONSUMER INTEREST - Scatter Plot */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">MARKET GROWTH VS CONSUMER INTEREST</h3>
+              <div className="relative h-64 bg-gray-50 rounded-lg p-4">
+                <div className="absolute bottom-0 left-0 w-full h-px bg-gray-300"></div>
+                <div className="absolute top-0 left-0 w-full h-px bg-gray-300"></div>
+                <div className="absolute bottom-0 left-0 h-full w-px bg-gray-300"></div>
+                <div className="absolute bottom-0 right-0 h-full w-px bg-gray-300"></div>
+                
+                {/* Plot points */}
+                {[...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products].map((evaluation, index) => (
+                  <div
+                    key={index}
+                    className={`absolute w-3 h-3 rounded-full transform -translate-x-1/2 -translate-y-1/2 ${
+                      evaluation.pop_relevance_score >= 75 ? 'bg-green-500' :
+                      evaluation.pop_relevance_score >= 60 ? 'bg-yellow-500' : 'bg-orange-500'
+                    }`}
+                    style={{
+                      left: `${evaluation.product.market_growth_rate}%`,
+                      bottom: `${evaluation.product.consumer_interest_score}%`
+                    }}
+                    title={`${evaluation.product.name}: Growth ${evaluation.product.market_growth_rate}%, Interest ${evaluation.product.consumer_interest_score}%`}
+                  ></div>
+                ))}
+                
+                {/* Axis labels */}
+                <div className="absolute bottom-2 left-2 text-xs text-gray-600">0</div>
+                <div className="absolute bottom-2 right-2 text-xs text-gray-600">100%</div>
+                <div className="absolute top-2 left-2 text-xs text-gray-600">100%</div>
+                <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 text-xs text-gray-600 -mb-4">Market Growth</div>
+                <div className="absolute left-0 top-1/2 transform -translate-y-1/2 -rotate-90 text-xs text-gray-600 -ml-8">Consumer Interest</div>
+              </div>
+            </div>
+
+            {/* RISK PROFILE BREAKDOWN - Stacked Bar Chart */}
+            <div className="bg-white rounded-lg shadow p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">RISK PROFILE BREAKDOWN</h3>
+              <div className="space-y-3">
+                {['Tariff', 'FDA', 'Supply', 'Competition'].map((riskType, index) => {
+                  const lowCount = [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products]
+                    .filter(p => {
+                      const risk = p.risk_assessment;
+                      if (riskType === 'Tariff') return risk.tariff_risk === 'low';
+                      if (riskType === 'FDA') return risk.fda_concern === 'low';
+                      if (riskType === 'Supply') return risk.supply_chain_risk === 'low';
+                      if (riskType === 'Competition') return risk.competition_risk === 'low';
+                      return false;
+                    }).length;
+                  
+                  const mediumCount = [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products]
+                    .filter(p => {
+                      const risk = p.risk_assessment;
+                      if (riskType === 'Tariff') return risk.tariff_risk === 'medium';
+                      if (riskType === 'FDA') return risk.fda_concern === 'medium';
+                      if (riskType === 'Supply') return risk.supply_chain_risk === 'medium';
+                      if (riskType === 'Competition') return risk.competition_risk === 'medium';
+                      return false;
+                    }).length;
+                  
+                  const highCount = [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products]
+                    .filter(p => {
+                      const risk = p.risk_assessment;
+                      if (riskType === 'Tariff') return risk.tariff_risk === 'high';
+                      if (riskType === 'FDA') return risk.fda_concern === 'high';
+                      if (riskType === 'Supply') return risk.supply_chain_risk === 'high';
+                      if (riskType === 'Competition') return risk.competition_risk === 'high';
+                      return false;
+                    }).length;
+                  
+                  const total = lowCount + mediumCount + highCount;
+                  
+                  return (
+                    <div key={index} className="flex items-center">
+                      <div className="w-20 text-sm text-gray-600">{riskType}</div>
+                      <div className="flex-1 mx-3">
+                        <div className="bg-gray-200 rounded-full h-6 flex">
+                          {lowCount > 0 && (
+                            <div 
+                              className="bg-green-500 h-6 rounded-l-full flex items-center justify-center"
+                              style={{width: `${(lowCount/total)*100}%`}}
+                            >
+                              {lowCount > 0 && <span className="text-xs text-white">{lowCount}</span>}
+                            </div>
+                          )}
+                          {mediumCount > 0 && (
+                            <div 
+                              className="bg-yellow-500 h-6 flex items-center justify-center"
+                              style={{width: `${(mediumCount/total)*100}%`}}
+                            >
+                              <span className="text-xs text-white">{mediumCount}</span>
+                            </div>
+                          )}
+                          {highCount > 0 && (
+                            <div 
+                              className="bg-red-500 h-6 rounded-r-full flex items-center justify-center"
+                              style={{width: `${(highCount/total)*100}%`}}
+                            >
+                              <span className="text-xs text-white">{highCount}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="flex justify-center space-x-6 mt-4">
+                <div className="flex items-center">
+                  <div className="w-3 h-3 bg-green-500 rounded-full mr-2"></div>
+                  <span className="text-xs text-gray-600">Low Risk</span>
+                </div>
+                <div className="flex items-center">
+                  <div className="w-3 h-3 bg-yellow-500 rounded-full mr-2"></div>
+                  <span className="text-xs text-gray-600">Medium Risk</span>
+                </div>
+                <div className="flex items-center">
+                  <div className="w-3 h-3 bg-red-500 rounded-full mr-2"></div>
+                  <span className="text-xs text-gray-600">High Risk</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         {/* High Priority Products */}
         {report.high_priority_products.length > 0 && (
           <div className="mb-8">
