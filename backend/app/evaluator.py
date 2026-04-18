@@ -9,32 +9,36 @@ from .business_rules import BusinessRulesEngine
 from .risk_assessment import RiskAssessmentEngine
 from .scoring import ScoringEngine
 
-# Evaluates products
+#Pipeline manager for decision-making process
 class ProductEvaluator:
     def __init__(self):
-        self.trend_analyzer = TrendAnalyzer()
-        self.business_rules = BusinessRulesEngine()
-        self.risk_assessor = RiskAssessmentEngine()
-        self.scoring_engine = ScoringEngine()
+        self.trend_analyzer = TrendAnalyzer() #fetches trending products
+        self.business_rules = BusinessRulesEngine() #checks company fit
+        self.risk_assessor = RiskAssessmentEngine() #assesses risk
+        self.scoring_engine = ScoringEngine() #assigns scores + reasoning
     
+    #Main Pipeline (end-to-end workflow)
     def evaluate_trending_products(self) -> TrendingReport:
         """Main evaluation pipeline"""
         
-        # Step 1: Fetch trending products
+        #1. Fetch trending products (input)
+        #Pulls list of TrendingProduct objects
+        #Our databases and scraping information
         trending_products = self.trend_analyzer.fetch_trending_products()
         
-        # Step 2: Evaluate each product
+        #2. Evaluate each product (core processing loop)
+        #Loops through every product and runs full evaluation
         evaluations = []
         for product in trending_products:
             evaluation = self._evaluate_single_product(product)
             evaluations.append(evaluation)
         
-        # Step 3: Prioritize products
+        #3. Prioritize products (grouped by score)
         high_priority = [e for e in evaluations if e.pop_relevance_score >= 75]
         medium_priority = [e for e in evaluations if 60 <= e.pop_relevance_score < 75]
         low_priority = [e for e in evaluations if e.pop_relevance_score < 60]
         
-        # Step 4: Sort by score within each priority level
+        #4. Sort by score within each priority level
         high_priority.sort(key=lambda x: x.pop_relevance_score, reverse=True)
         medium_priority.sort(key=lambda x: x.pop_relevance_score, reverse=True)
         low_priority.sort(key=lambda x: x.pop_relevance_score, reverse=True)
@@ -53,7 +57,9 @@ class ProductEvaluator:
         )
         
         return report
+
     
+    #Individual product evaluation
     def _evaluate_single_product(self, product: TrendingProduct) -> ProductEvaluation:
         """Evaluate a single trending product"""
         
@@ -134,3 +140,14 @@ class ProductEvaluator:
             insights.append(f"Top opportunity: {top_product.product.name} (Score: {top_product.pop_relevance_score:.1f})")
         
         return insights
+
+'''
+-------------------
+NOTES:
+-------------------
+⚠️ Limitations:
+- Hardcoded thresholds (75, 60) → might need tuning
+- No parallel processing → could be slow with many products
+- Assumes all subsystems return valid data
+- Risk logic is somewhat simplified (e.g., only checks two high-risk types for alerts)
+'''
