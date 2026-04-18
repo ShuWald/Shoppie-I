@@ -1,14 +1,16 @@
 from typing import List
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from .evaluator import ProductEvaluator
-from .models import TrendingReport
 from .filter import (
     get_fda_substances_endpoint,
     check_restricted_ingredients,
     estimate_shelf_life_endpoint,
     check_tariffs_endpoint,
 )
+from typing import Annotated
+from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from .evaluator import ProductEvaluator
+from .models import TrendingReport
 
 #NOTES AT BOTTOM OF FILE
 
