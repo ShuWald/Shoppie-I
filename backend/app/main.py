@@ -1,3 +1,10 @@
+from typing import List
+from .filter import (
+    get_fda_substances_endpoint,
+    check_restricted_ingredients,
+    estimate_shelf_life_endpoint,
+    check_tariffs_endpoint,
+)
 from typing import Annotated
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -59,6 +66,27 @@ async def evaluate_trending_products():
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "PoP Trending Products Evaluator"}
+
+
+# Filter endpoints
+@app.get("/api/fda-substances")
+async def fda_substances():
+    return get_fda_substances_endpoint()
+
+
+@app.post("/api/check-restricted")
+async def check_restricted(ingredients: List[str]):
+    return check_restricted_ingredients(ingredients)
+
+
+@app.post("/api/estimate-shelf-life")
+async def estimate_shelf_life(ingredients: List[str]):
+    return estimate_shelf_life_endpoint(ingredients)
+
+
+@app.post("/api/check-tariffs")
+async def check_tariffs(country: str, threshold: float = 15.0):
+    return check_tariffs_endpoint(country, threshold)
 
 
 '''
