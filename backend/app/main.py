@@ -4,13 +4,20 @@ from fastapi.middleware.cors import CORSMiddleware
 from .evaluator import ProductEvaluator
 from .models import TrendingReport
 
+#NOTES AT BOTTOM OF FILE
+
+'''
+--------------------------------
+App Initialization (create webserver)
+--------------------------------
+'''
 app = FastAPI(
     title="Prince of Peace Trending Products Evaluator",
     description="AI-powered tool to evaluate trending health/wellness products for Prince of Peace",
     version="1.0.0"
 )
 
-# Enable CORS for frontend
+# Enable CORS for frontend -> prevents frontend connection failure
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # Allow all origins for testing
@@ -19,13 +26,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize evaluator
+# Initialize evaluator from evaluator.py
 evaluator = ProductEvaluator()
 
+'''
+--------------------------------
+API Endpoints
+--------------------------------
+'''
+#API running check (root endpoint)
 @app.get("/")
 async def root():
     return {"message": "Prince of Peace Trending Products Evaluator API"}
 
+#Main Endpoint (trend report, formatting, error handling)
 @app.get("/api/evaluate-trending-products", response_model=TrendingReport)
 async def evaluate_trending_products():
     """
@@ -38,8 +52,41 @@ async def evaluate_trending_products():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Evaluation failed: {str(e)}")
 
+
+#Health check endpoint
 @app.get("/api/health")
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "PoP Trending Products Evaluator"}
+
+
+'''
+--------------------------------
+NOTES
+--------------------------------
+How it works:
+
+1. User/frontend sends GET request to /api/evaluate-trending-products
+2. FastAPI (this file) routes request to function 'ProductEvaluator'
+3. Evaluator generates a 'TrendingReport'
+4. FastAPI validates with Pydantic + converts to JSON
+5. Returns JSON response to user/frontend
+
+Built-In Advantages:
+
+Automatic validation (via Pydantic models)
+Auto-generated API docs (Swagger UI at /docs)
+Type safety
+Clean error handling
+Frontend-ready (CORS enabled)
+
+⚠️ Things to Note:
+
+allow_origins=["*"]
+→ Fine for development, but unsafe for production (should restrict domains)
+No authentication
+→ Anyone can call the API
+Assumes ProductEvaluator is reliable
+→ If it's slow or unstable, the API will be too
+'''
 
