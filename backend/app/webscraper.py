@@ -1,7 +1,4 @@
 from typing import Annotated
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-
 import requests
 from bs4 import BeautifulSoup
 
@@ -16,12 +13,13 @@ Dependencies:
 
 Usage:
     python google_trends_scraper.py
-    python google_trends_scraper.py --timeframe today\ 3-m --output trends_q3.xlsx
+    python google_trends_scraper.py --timeframe "today 3-m" --output trends_q3.xlsx
 """
 
 import time
 import argparse
 import logging
+import os
 from datetime import datetime
 from typing import Optional
 
@@ -195,7 +193,7 @@ class GoogleTrendsScraper:
 
         if not all_frames:
             return pd.DataFrame()
-        return pd.concat(all_frames, axis=1).groupby(level=0, axis=1).mean()
+        return pd.concat(all_frames, axis=1).groupby(level=0).mean()
 
     def get_related_queries(self) -> dict[str, dict]:
         """Fetch rising and top related queries for category keywords."""
@@ -423,6 +421,11 @@ class GoogleTrendsScraper:
             "interest_score", "region", "query_type",
             "related_term", "related_value", "suggestion_type",
         ])
+
+        if os.path.exists(output_path):
+            existing_df = pd.read_csv(output_path)
+            out_df = pd.concat([existing_df, out_df]).drop_duplicates()
+
         out_df.to_csv(output_path, index=False, encoding="utf-8-sig")
         log.info(f"✓ CSV export complete → {output_path}  ({len(out_df):,} rows)")
 
