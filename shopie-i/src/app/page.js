@@ -5,8 +5,32 @@
 import { useState, useEffect } from "react";
 
 import Sidebar from "../components/Sidebar";
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  PointElement,
+  ArcElement,
+  RadialLinearScale
+} from 'chart.js';
+import { Bar, Doughnut, Bubble } from 'react-chartjs-2';
 
-
+// Register Chart.js components
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  Title,
+  Tooltip,
+  Legend,
+  PointElement,
+  ArcElement,
+  RadialLinearScale
+);
 
 export default function Home() {
 
@@ -25,6 +49,10 @@ export default function Home() {
   const [categoryFilter, setCategoryFilter] = useState("all");
 
   const [expandedReports, setExpandedReports] = useState(new Set());
+
+  const [expandedRecommendation, setExpandedRecommendation] = useState(null);
+
+  const [hoveredPrediction, setHoveredPrediction] = useState(null);
 
 
 
@@ -433,22 +461,22 @@ export default function Home() {
           </div>
         </header>
 
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <main className="w-full max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-6 md:py-8">
 
         {/* Tab Content */}
         {activeTab === "overview" && (
           <div>
-            {/* Summary Insights */}
+            {/* Summary Insights - New Design */}
             <div className="mb-8">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Key Insights</h2>
               <div className="grid grid-cols-3 gap-4">
                 {report.summary_insights.map((insight, index) => {
                   const cardData = parseInsightCard(insight);
                   return (
-                    <div key={index} className="bg-white rounded-lg shadow p-4 border border-gray-200 hover:shadow-md transition-shadow">
-                      <p className="text-sm text-gray-500 uppercase tracking-wide break-words">{cardData.title}</p>
-                      <p className={`${cardData.valueClass || "text-2xl font-bold"} text-gray-900 mt-1 break-words`}>{cardData.value}</p>
-                      <p className="text-sm text-gray-600 mt-1 break-words">{cardData.subtitle}</p>
+                    <div key={index} className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+                      <p className="text-base font-bold text-blue-600 mb-2 break-words">{cardData.title}</p>
+                      <p className="text-lg font-bold text-gray-900 mb-2 leading-tight break-words">{cardData.value}</p>
+                      <p className="text-sm text-gray-600 leading-relaxed break-words">{cardData.subtitle}</p>
                     </div>
                   );
                 })}
@@ -456,9 +484,9 @@ export default function Home() {
             </div>
 
             {/* Actionable Recommendations Panel */}
-            <div className="mb-8">
+            <div className="mb-6 md:mb-8">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Actionable Recommendations</h2>
-              <div className="bg-white rounded-lg shadow p-6 border border-gray-200">
+              <div className="bg-white rounded-lg shadow p-4 md:p-6 border border-gray-200">
                 <div className="space-y-4">
                   {/* Generate recommendations based on report data */}
                   {(() => {
@@ -530,11 +558,15 @@ export default function Home() {
                       }
                       
                       return (
-                        <div key={index} className={`p-4 rounded-lg border-2 hover:shadow-md transition-all duration-200 ${
-                          rec.type === 'launch' ? 'bg-green-50 border-green-200 hover:border-green-300' :
-                          rec.type === 'regulatory' ? 'bg-yellow-50 border-yellow-200 hover:border-yellow-300' :
-                          'bg-blue-50 border-blue-200 hover:border-blue-300'
-                        }`}>
+                        <div 
+                          key={index} 
+                          className={`p-4 rounded-lg border-2 hover:shadow-md transition-all duration-200 cursor-pointer ${
+                            rec.type === 'launch' ? 'bg-green-50 border-green-200 hover:border-green-300' :
+                            rec.type === 'regulatory' ? 'bg-yellow-50 border-yellow-200 hover:border-yellow-300' :
+                            'bg-blue-50 border-blue-200 hover:border-blue-300'
+                          }`}
+                          onClick={() => setExpandedRecommendation(expandedRecommendation === index ? null : index)}
+                        >
                           <div className="flex items-start">
                             <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-3 mt-0.5 flex-shrink-0 ${iconColor} shadow-sm`}>
                               {rec.type === 'launch' && (
@@ -566,7 +598,52 @@ export default function Home() {
                               <p className="text-sm font-bold text-gray-900 mb-1 leading-tight">{recommendationText}</p>
                               <p className="text-xs text-gray-600 leading-relaxed">{summaryText}</p>
                             </div>
+                            <svg 
+                              className={`w-5 h-5 text-gray-400 transition-transform duration-200 ${expandedRecommendation === index ? 'rotate-180' : ''}`} 
+                              fill="none" 
+                              stroke="currentColor" 
+                              viewBox="0 0 24 24"
+                            >
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
                           </div>
+                          {expandedRecommendation === index && (
+                            <div className="mt-4 pt-4 border-t border-gray-200">
+                              {rec.type === 'launch' && (
+                                <div className="space-y-2">
+                                  <p className="text-xs font-semibold text-gray-700">Next Steps:</p>
+                                  <ul className="text-xs text-gray-600 list-disc list-inside space-y-1">
+                                    <li>Review product specifications and packaging requirements</li>
+                                    <li>Prepare distribution channel strategy</li>
+                                    <li>Conduct final quality assurance testing</li>
+                                    <li>Set launch timeline and marketing budget</li>
+                                  </ul>
+                                </div>
+                              )}
+                              {rec.type === 'regulatory' && (
+                                <div className="space-y-2">
+                                  <p className="text-xs font-semibold text-gray-700">Compliance Review:</p>
+                                  <ul className="text-xs text-gray-600 list-disc list-inside space-y-1">
+                                    <li>Consult FDA guidelines for product classification</li>
+                                    <li>Review tariff rates and import requirements</li>
+                                    <li>Obtain necessary certifications and approvals</li>
+                                    <li>Document all compliance measures for audit trail</li>
+                                  </ul>
+                                </div>
+                              )}
+                              {rec.type === 'expansion' && (
+                                <div className="space-y-2">
+                                  <p className="text-xs font-semibold text-gray-700">Expansion Strategy:</p>
+                                  <ul className="text-xs text-gray-600 list-disc list-inside space-y-1">
+                                    <li>Analyze market demand and competition in category</li>
+                                    <li>Identify key distribution partners</li>
+                                    <li>Develop category-specific marketing approach</li>
+                                    <li>Set sales targets and growth metrics</li>
+                                  </ul>
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     });
@@ -701,230 +778,245 @@ export default function Home() {
         {activeTab === "visual" && (
           <div>
             <h2 className="text-xl font-semibold text-gray-900 mb-6">Visual Data Analysis</h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* POP RELEVANCE SCORES BY PRODUCT - Horizontal Bar Chart */}
-              <div className="bg-white rounded-lg shadow p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">POP RELEVANCE SCORES BY PRODUCT</h3>
-                <div className="space-y-3">
-                  {report.high_priority_products.map((evaluation, index) => (
-                    <div key={index} className="flex items-center">
-                      <div className="w-32 text-sm text-gray-600 truncate">{evaluation.product.name}</div>
-                      <div className="flex-1 mx-3">
-                        <div className="bg-gray-200 rounded-full h-6 relative">
-                          <div 
-                            className="bg-green-500 h-6 rounded-full flex items-center justify-end pr-2"
-                            style={{width: `${evaluation.pop_relevance_score}%`}}
-                          >
-                            <span className="text-xs text-white font-semibold">{evaluation.pop_relevance_score.toFixed(1)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {report.medium_priority_products.map((evaluation, index) => (
-                    <div key={`med-${index}`} className="flex items-center">
-                      <div className="w-32 text-sm text-gray-600 truncate">{evaluation.product.name}</div>
-                      <div className="flex-1 mx-3">
-                        <div className="bg-gray-200 rounded-full h-6 relative">
-                          <div 
-                            className="bg-yellow-500 h-6 rounded-full flex items-center justify-end pr-2"
-                            style={{width: `${evaluation.pop_relevance_score}%`}}
-                          >
-                            <span className="text-xs text-white font-semibold">{evaluation.pop_relevance_score.toFixed(1)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                  {report.low_priority_products.filter(p => p.pop_relevance_score >= 50).map((evaluation, index) => (
-                    <div key={`low-${index}`} className="flex items-center">
-                      <div className="w-32 text-sm text-gray-600 truncate">{evaluation.product.name}</div>
-                      <div className="flex-1 mx-3">
-                        <div className="bg-gray-200 rounded-full h-6 relative">
-                          <div 
-                            className="bg-orange-500 h-6 rounded-full flex items-center justify-end pr-2"
-                            style={{width: `${evaluation.pop_relevance_score}%`}}
-                          >
-                            <span className="text-xs text-white font-semibold">{evaluation.pop_relevance_score.toFixed(1)}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4 md:gap-6">
+              {/* POP RELEVANCE SCORES BY PRODUCT - Chart.js Horizontal Bar Chart */}
+              <div className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
+                <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">PoP relevance scores by product</h3>
+                <div className="flex flex-wrap gap-3 mb-3">
+                  <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-green-600"></span>
+                    <span>High priority</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-blue-500"></span>
+                    <span>Medium priority</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-gray-500"></span>
+                    <span>Needs development</span>
+                  </div>
                 </div>
-                <div className="flex justify-center space-x-6 mt-4">
-                  <div className="flex items-center">
-                    <div className="w-3 h-3 bg-green-500 rounded-full mr-2"></div>
-                    <span className="text-xs text-gray-600">High Priority</span>
-                  </div>
-                  <div className="flex items-center">
-                    <div className="w-3 h-3 bg-yellow-500 rounded-full mr-2"></div>
-                    <span className="text-xs text-gray-600">Medium Priority</span>
-                  </div>
-                  <div className="flex items-center">
-                    <div className="w-3 h-3 bg-orange-500 rounded-full mr-2"></div>
-                    <span className="text-xs text-gray-600">Needs Development</span>
-                  </div>
+                <div className="relative h-48 sm:h-52 lg:h-56">
+                  <Bar
+                    data={{
+                      labels: [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products].map(p => p.product.name),
+                      datasets: [{
+                        label: 'PoP Score',
+                        data: [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products].map(p => p.pop_relevance_score),
+                        backgroundColor: [
+                          ...report.high_priority_products.map(() => '#1D9E75'),
+                          ...report.medium_priority_products.map(() => '#378ADD'),
+                          ...report.low_priority_products.map(() => '#888780')
+                        ],
+                        borderRadius: 4,
+                        borderSkipped: false,
+                      }]
+                    }}
+                    options={{
+                      indexAxis: 'y',
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: { legend: { display: false } },
+                      scales: {
+                        x: { min: 0, max: 100, ticks: { font: { size: 11 } }, grid: { color: '#f0f0f0' } },
+                        y: { grid: { display: false }, ticks: { font: { size: 11 } } }
+                      }
+                    }}
+                  />
                 </div>
               </div>
 
-              {/* CATEGORY DISTRIBUTION - Donut Chart */}
-              <div className="bg-white rounded-lg shadow p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">CATEGORY DISTRIBUTION</h3>
-                <div className="flex items-center justify-center">
-                  <div className="relative w-48 h-48">
-                    {/* Simple donut chart using CSS */}
-                    <div className="absolute inset-0 rounded-full border-8 border-blue-500 border-r-transparent border-b-transparent transform rotate-45"></div>
-                    <div className="absolute inset-0 rounded-full border-8 border-green-500 border-l-transparent border-b-transparent transform -rotate-45"></div>
-                    <div className="absolute inset-0 rounded-full border-8 border-yellow-500 border-t-transparent border-r-transparent transform rotate-12"></div>
-                    <div className="absolute inset-0 rounded-full border-8 border-purple-500 border-l-transparent border-t-transparent transform -rotate-12"></div>
-                    <div className="absolute inset-8 bg-white rounded-full flex items-center justify-center">
-                      <div className="text-center">
-                        <div className="text-2xl font-bold text-gray-900">{report.total_products_evaluated}</div>
-                        <div className="text-xs text-gray-600">Total</div>
+              {/* CATEGORY DISTRIBUTION - Chart.js Doughnut Chart */}
+              <div className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
+                <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">Category distribution</h3>
+                <div className="flex flex-wrap gap-3 mb-3">
+                  {(() => {
+                    const categoryCounts = {};
+                    [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products].forEach(product => {
+                      const category = product.product.category;
+                      categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+                    });
+                    const categories = Object.keys(categoryCounts);
+                    const uniqueColors = [
+                      '#1D9E75', '#378ADD', '#EF9F27', '#D4537E', '#888780',
+                      '#E24B4A', '#F59E0B', '#8B5CF6', '#10B981', '#F97316',
+                      '#06B6D4', '#84CC16', '#A855F7', '#EC4899', '#14B8A6'
+                    ];
+                    const colors = categories.map((cat, index) => uniqueColors[index % uniqueColors.length]);
+                    
+                    return categories.map((category, index) => (
+                      <div key={category} className="flex items-center gap-1.5 text-xs text-gray-600">
+                        <span className="w-2.5 h-2.5 rounded-sm" style={{ backgroundColor: colors[index] }}></span>
+                        <span>{category}</span>
                       </div>
-                    </div>
-                  </div>
-                  <div className="ml-8 space-y-2">
-                    <div className="flex items-center">
-                      <div className="w-3 h-3 bg-blue-500 rounded-full mr-2"></div>
-                      <span className="text-sm text-gray-700">Herbal supplement</span>
-                    </div>
-                    <div className="flex items-center">
-                      <div className="w-3 h-3 bg-green-500 rounded-full mr-2"></div>
-                      <span className="text-sm text-gray-700">Beverage</span>
-                    </div>
-                    <div className="flex items-center">
-                      <div className="w-3 h-3 bg-yellow-500 rounded-full mr-2"></div>
-                      <span className="text-sm text-gray-700">Functional food</span>
-                    </div>
-                    <div className="flex items-center">
-                      <div className="w-3 h-3 bg-purple-500 rounded-full mr-2"></div>
-                      <span className="text-sm text-gray-700">Topical</span>
-                    </div>
-                  </div>
+                    ));
+                  })()}
+                </div>
+                <div className="relative h-48 sm:h-52 lg:h-56">
+                  <Doughnut
+                    data={{
+                      labels: (() => {
+                        const categoryCounts = {};
+                        [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products].forEach(product => {
+                          const category = product.product.category;
+                          categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+                        });
+                        return Object.keys(categoryCounts);
+                      })(),
+                      datasets: [{
+                        data: (() => {
+                          const categoryCounts = {};
+                          [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products].forEach(product => {
+                            const category = product.product.category;
+                            categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+                          });
+                          return Object.values(categoryCounts);
+                        })(),
+                        backgroundColor: (() => {
+                          const categoryCounts = {};
+                          [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products].forEach(product => {
+                            const category = product.product.category;
+                            categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+                          });
+                          const categories = Object.keys(categoryCounts);
+                          const uniqueColors = [
+                            '#1D9E75', '#378ADD', '#EF9F27', '#D4537E', '#888780',
+                            '#E24B4A', '#F59E0B', '#8B5CF6', '#10B981', '#F97316',
+                            '#06B6D4', '#84CC16', '#A855F7', '#EC4899', '#14B8A6'
+                          ];
+                          return categories.map((cat, index) => uniqueColors[index % uniqueColors.length]);
+                        })(),
+                        borderWidth: 0,
+                        hoverOffset: 6,
+                      }]
+                    }}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      cutout: '60%',
+                      plugins: { legend: { display: false } }
+                    }}
+                  />
                 </div>
               </div>
 
-              {/* MARKET GROWTH VS CONSUMER INTEREST - Scatter Plot */}
-              <div className="bg-white rounded-lg shadow p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">MARKET GROWTH VS CONSUMER INTEREST</h3>
-                <div className="relative h-64 bg-gray-50 rounded-lg p-4">
-                  <div className="absolute bottom-0 left-0 w-full h-px bg-gray-300"></div>
-                  <div className="absolute top-0 left-0 w-full h-px bg-gray-300"></div>
-                  <div className="absolute bottom-0 left-0 h-full w-px bg-gray-300"></div>
-                  <div className="absolute bottom-0 right-0 h-full w-px bg-gray-300"></div>
-                  
-                  {/* Plot points */}
-                  {[...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products].map((evaluation, index) => (
-                    <div
-                      key={index}
-                      className={`absolute w-3 h-3 rounded-full transform -translate-x-1/2 -translate-y-1/2 ${
-                        evaluation.pop_relevance_score >= 75 ? 'bg-green-500' :
-                        evaluation.pop_relevance_score >= 60 ? 'bg-yellow-500' : 'bg-orange-500'
-                      }`}
-                      style={{
-                        left: `${evaluation.product.market_growth_rate}%`,
-                        bottom: `${evaluation.product.consumer_interest_score}%`
-                      }}
-                      title={`${evaluation.product.name}: Growth ${evaluation.product.market_growth_rate}%, Interest ${evaluation.product.consumer_interest_score}%`}
-                    ></div>
-                  ))}
-                  
-                  {/* Axis labels */}
-                  <div className="absolute bottom-2 left-2 text-xs text-gray-600">0</div>
-                  <div className="absolute bottom-2 right-2 text-xs text-gray-600">100%</div>
-                  <div className="absolute top-2 left-2 text-xs text-gray-600">100%</div>
-                  <div className="absolute bottom-0 left-1/2 transform -translate-x-1/2 text-xs text-gray-600 -mb-4">Market Growth</div>
-                  <div className="absolute left-0 top-1/2 transform -translate-y-1/2 -rotate-90 text-xs text-gray-600 -ml-8">Consumer Interest</div>
+              {/* MARKET GROWTH VS CONSUMER INTEREST - Chart.js Bubble Chart */}
+              <div className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
+                <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">Market growth vs consumer interest</h3>
+                <div className="relative h-48 sm:h-52 lg:h-56">
+                  <Bubble
+                    data={{
+                      datasets: [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products].map((product, index) => ({
+                        label: product.product.name,
+                        data: [{
+                          x: product.product.market_growth_rate,
+                          y: product.product.consumer_interest_score,
+                          r: Math.max(5, Math.min(15, product.pop_relevance_score / 5))
+                        }],
+                        backgroundColor: [
+                          '#1D9E75cc', '#378ADDcc', '#EF9F27cc', '#D4537Ecc', '#888780cc'
+                        ][index % 5]
+                      }))
+                    }}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: { legend: { display: false } },
+                      scales: {
+                        x: { 
+                          title: { display: true, text: 'Market growth (%)', font: { size: 11 } }, 
+                          min: 5, 
+                          max: 55,
+                          ticks: { font: { size: 11 } }
+                        },
+                        y: { 
+                          title: { display: true, text: 'Consumer interest', font: { size: 11 } }, 
+                          min: 45, 
+                          max: 100,
+                          ticks: { font: { size: 11 } }
+                        }
+                      }
+                    }}
+                  />
                 </div>
               </div>
 
-              {/* RISK PROFILE BREAKDOWN - Stacked Bar Chart */}
-              <div className="bg-white rounded-lg shadow p-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">RISK PROFILE BREAKDOWN</h3>
-                <div className="space-y-3">
-                  {['Tariff', 'FDA', 'Supply', 'Competition'].map((riskType, index) => {
-                    const lowCount = [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products]
-                      .filter(p => {
-                        const risk = p.risk_assessment;
-                        if (riskType === 'Tariff') return risk.tariff_risk === 'low';
-                        if (riskType === 'FDA') return risk.fda_concern === 'low';
-                        if (riskType === 'Supply') return risk.supply_chain_risk === 'low';
-                        if (riskType === 'Competition') return risk.competition_risk === 'low';
-                        return false;
-                      }).length;
-                    
-                    const mediumCount = [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products]
-                      .filter(p => {
-                        const risk = p.risk_assessment;
-                        if (riskType === 'Tariff') return risk.tariff_risk === 'medium';
-                        if (riskType === 'FDA') return risk.fda_concern === 'medium';
-                        if (riskType === 'Supply') return risk.supply_chain_risk === 'medium';
-                        if (riskType === 'Competition') return risk.competition_risk === 'medium';
-                        return false;
-                      }).length;
-                    
-                    const highCount = [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products]
-                      .filter(p => {
-                        const risk = p.risk_assessment;
-                        if (riskType === 'Tariff') return risk.tariff_risk === 'high';
-                        if (riskType === 'FDA') return risk.fda_concern === 'high';
-                        if (riskType === 'Supply') return risk.supply_chain_risk === 'high';
-                        if (riskType === 'Competition') return risk.competition_risk === 'high';
-                        return false;
-                      }).length;
-                    
-                    const total = lowCount + mediumCount + highCount;
-                    
-                    return (
-                      <div key={index} className="flex items-center">
-                        <div className="w-20 text-sm text-gray-600">{riskType}</div>
-                        <div className="flex-1 mx-3">
-                          <div className="bg-gray-200 rounded-full h-6 flex">
-                            {lowCount > 0 && (
-                              <div 
-                                className="bg-green-500 h-6 rounded-l-full flex items-center justify-center"
-                                style={{width: `${(lowCount/total)*100}%`}}
-                              >
-                                {lowCount > 0 && <span className="text-xs text-white">{lowCount}</span>}
-                              </div>
-                            )}
-                            {mediumCount > 0 && (
-                              <div 
-                                className="bg-yellow-500 h-6 flex items-center justify-center"
-                                style={{width: `${(mediumCount/total)*100}%`}}
-                              >
-                                <span className="text-xs text-white">{mediumCount}</span>
-                              </div>
-                            )}
-                            {highCount > 0 && (
-                              <div 
-                                className="bg-red-500 h-6 rounded-r-full flex items-center justify-center"
-                                style={{width: `${(highCount/total)*100}%`}}
-                              >
-                                <span className="text-xs text-white">{highCount}</span>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+              {/* RISK PROFILE BREAKDOWN - Chart.js Stacked Bar Chart */}
+              <div className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
+                <h3 className="text-sm font-semibold text-gray-900 uppercase tracking-wide mb-4">Risk profile breakdown</h3>
+                <div className="flex flex-wrap gap-3 mb-3">
+                  <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-green-600"></span>
+                    <span>Low</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-yellow-500"></span>
+                    <span>Medium</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-xs text-gray-600">
+                    <span className="w-2.5 h-2.5 rounded-sm bg-red-500"></span>
+                    <span>High</span>
+                  </div>
                 </div>
-                <div className="flex justify-center space-x-6 mt-4">
-                  <div className="flex items-center">
-                    <div className="w-3 h-3 bg-green-500 rounded-full mr-2"></div>
-                    <span className="text-xs text-gray-600">Low Risk</span>
-                  </div>
-                  <div className="flex items-center">
-                    <div className="w-3 h-3 bg-yellow-500 rounded-full mr-2"></div>
-                    <span className="text-xs text-gray-600">Medium Risk</span>
-                  </div>
-                  <div className="flex items-center">
-                    <div className="w-3 h-3 bg-red-500 rounded-full mr-2"></div>
-                    <span className="text-xs text-gray-600">High Risk</span>
-                  </div>
+                <div className="relative h-48 sm:h-52 lg:h-56">
+                  <Bar
+                    data={{
+                      labels: ['Tariff', 'FDA', 'Supply', 'Competition'],
+                      datasets: [
+                        { 
+                          label: 'Low',    
+                          data: (() => {
+                            const allProducts = [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products];
+                            return [
+                              allProducts.filter(p => p.risk_assessment.tariff_risk === 'low').length,
+                              allProducts.filter(p => p.risk_assessment.fda_concern === 'low').length,
+                              allProducts.filter(p => p.risk_assessment.supply_chain_risk === 'low').length,
+                              allProducts.filter(p => p.risk_assessment.competition_risk === 'low').length
+                            ];
+                          })(), 
+                          backgroundColor: '#1D9E75', 
+                          borderRadius: 3 
+                        },
+                        { 
+                          label: 'Medium', 
+                          data: (() => {
+                            const allProducts = [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products];
+                            return [
+                              allProducts.filter(p => p.risk_assessment.tariff_risk === 'medium').length,
+                              allProducts.filter(p => p.risk_assessment.fda_concern === 'medium').length,
+                              allProducts.filter(p => p.risk_assessment.supply_chain_risk === 'medium').length,
+                              allProducts.filter(p => p.risk_assessment.competition_risk === 'medium').length
+                            ];
+                          })(), 
+                          backgroundColor: '#EF9F27', 
+                          borderRadius: 3 
+                        },
+                        { 
+                          label: 'High',   
+                          data: (() => {
+                            const allProducts = [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products];
+                            return [
+                              allProducts.filter(p => p.risk_assessment.tariff_risk === 'high').length,
+                              allProducts.filter(p => p.risk_assessment.fda_concern === 'high').length,
+                              allProducts.filter(p => p.risk_assessment.supply_chain_risk === 'high').length,
+                              allProducts.filter(p => p.risk_assessment.competition_risk === 'high').length
+                            ];
+                          })(), 
+                          backgroundColor: '#E24B4A', 
+                          borderRadius: 3 
+                        },
+                      ]
+                    }}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: { legend: { display: false } },
+                      scales: {
+                        x: { stacked: true, grid: { display: false }, ticks: { font: { size: 11 } } },
+                        y: { stacked: true, ticks: { stepSize: 1, font: { size: 11 } } }
+                      }
+                    }}
+                  />
                 </div>
               </div>
             </div>
@@ -938,7 +1030,11 @@ export default function Home() {
               <div className="mb-6">
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Emerging Trends Analysis</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <div className="border border-gray-200 rounded-lg p-4">
+                  <div 
+                    className="border border-gray-200 rounded-lg p-4 relative"
+                    onMouseEnter={() => setHoveredPrediction('herbal')}
+                    onMouseLeave={() => setHoveredPrediction(null)}
+                  >
                     <div className="flex items-center mb-2">
                       <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center mr-3">
                         <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -951,9 +1047,40 @@ export default function Home() {
                     <div className="flex items-center text-xs text-green-600">
                       <span className="font-medium">+24% growth expected</span>
                     </div>
+                    {hoveredPrediction === 'herbal' && (
+                      <div className="absolute left-0 right-0 top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg p-4 z-10">
+                        <h5 className="text-xs font-semibold text-gray-900 mb-2">Validation Data</h5>
+                        <div className="space-y-2 text-xs">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Market Size:</span>
+                            <span className="text-gray-900 font-medium">$2.4B</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Consumer Interest:</span>
+                            <span className="text-gray-900 font-medium">89%</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Search Volume:</span>
+                            <span className="text-gray-900 font-medium">+156% YoY</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Competitor Count:</span>
+                            <span className="text-gray-900 font-medium">12</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Regulatory Risk:</span>
+                            <span className="text-gray-900 font-medium">Low</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   
-                  <div className="border border-gray-200 rounded-lg p-4">
+                  <div 
+                    className="border border-gray-200 rounded-lg p-4 relative"
+                    onMouseEnter={() => setHoveredPrediction('beverages')}
+                    onMouseLeave={() => setHoveredPrediction(null)}
+                  >
                     <div className="flex items-center mb-2">
                       <div className="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center mr-3">
                         <svg className="w-4 h-4 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -966,9 +1093,40 @@ export default function Home() {
                     <div className="flex items-center text-xs text-yellow-600">
                       <span className="font-medium">+12% growth expected</span>
                     </div>
+                    {hoveredPrediction === 'beverages' && (
+                      <div className="absolute left-0 right-0 top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg p-4 z-10">
+                        <h5 className="text-xs font-semibold text-gray-900 mb-2">Validation Data</h5>
+                        <div className="space-y-2 text-xs">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Market Size:</span>
+                            <span className="text-gray-900 font-medium">$1.8B</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Consumer Interest:</span>
+                            <span className="text-gray-900 font-medium">72%</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Search Volume:</span>
+                            <span className="text-gray-900 font-medium">+89% YoY</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Competitor Count:</span>
+                            <span className="text-gray-900 font-medium">24</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Regulatory Risk:</span>
+                            <span className="text-gray-900 font-medium">Medium</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                   
-                  <div className="border border-gray-200 rounded-lg p-4">
+                  <div 
+                    className="border border-gray-200 rounded-lg p-4 relative"
+                    onMouseEnter={() => setHoveredPrediction('topical')}
+                    onMouseLeave={() => setHoveredPrediction(null)}
+                  >
                     <div className="flex items-center mb-2">
                       <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
                         <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -981,6 +1139,33 @@ export default function Home() {
                     <div className="flex items-center text-xs text-blue-600">
                       <span className="font-medium">+8% growth expected</span>
                     </div>
+                    {hoveredPrediction === 'topical' && (
+                      <div className="absolute left-0 right-0 top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg p-4 z-10">
+                        <h5 className="text-xs font-semibold text-gray-900 mb-2">Validation Data</h5>
+                        <div className="space-y-2 text-xs">
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Market Size:</span>
+                            <span className="text-gray-900 font-medium">$950M</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Consumer Interest:</span>
+                            <span className="text-gray-900 font-medium">65%</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Search Volume:</span>
+                            <span className="text-gray-900 font-medium">+45% YoY</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Competitor Count:</span>
+                            <span className="text-gray-900 font-medium">8</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Regulatory Risk:</span>
+                            <span className="text-gray-900 font-medium">Medium</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -988,41 +1173,104 @@ export default function Home() {
               <div>
                 <h3 className="text-lg font-semibold text-gray-900 mb-4">Seasonal Forecast</h3>
                 <div className="bg-gray-50 rounded-lg p-4">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-700">Q1 2026</span>
-                      <div className="flex items-center">
-                        <div className="w-32 bg-gray-200 rounded-full h-2 mr-3">
+                  <div className="space-y-4">
+                    <div className="border border-gray-200 rounded-lg p-4 bg-white">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <span className="text-sm font-semibold text-gray-900">Q1 2026</span>
+                          <p className="text-xs text-gray-500 mt-1">Jan-Mar</p>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-sm font-bold text-blue-600">$1.2M</span>
+                          <p className="text-xs text-gray-500">Projected Revenue</p>
+                        </div>
+                      </div>
+                      <div className="mb-3">
+                        <div className="w-full bg-gray-200 rounded-full h-2">
                           <div className="bg-blue-500 h-2 rounded-full" style={{width: "65%"}}></div>
                         </div>
-                        <span className="text-sm text-gray-600">High demand</span>
+                        <div className="flex justify-between mt-1">
+                          <span className="text-xs text-gray-500">65% Capacity</span>
+                          <span className="text-xs text-blue-600">+18% vs Q4 2025</span>
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        <span className="font-medium">Key Drivers:</span> New Year wellness resolutions, immune health focus
                       </div>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-700">Q2 2026</span>
-                      <div className="flex items-center">
-                        <div className="w-32 bg-gray-200 rounded-full h-2 mr-3">
+                    
+                    <div className="border border-gray-200 rounded-lg p-4 bg-white">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <span className="text-sm font-semibold text-gray-900">Q2 2026</span>
+                          <p className="text-xs text-gray-500 mt-1">Apr-Jun</p>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-sm font-bold text-green-600">$1.8M</span>
+                          <p className="text-xs text-gray-500">Projected Revenue</p>
+                        </div>
+                      </div>
+                      <div className="mb-3">
+                        <div className="w-full bg-gray-200 rounded-full h-2">
                           <div className="bg-green-500 h-2 rounded-full" style={{width: "85%"}}></div>
                         </div>
-                        <span className="text-sm text-gray-600">Peak season</span>
+                        <div className="flex justify-between mt-1">
+                          <span className="text-xs text-gray-500">85% Capacity</span>
+                          <span className="text-xs text-green-600">+50% vs Q1 2026</span>
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        <span className="font-medium">Key Drivers:</span> Spring outdoor activities, allergy season demand
                       </div>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-700">Q3 2026</span>
-                      <div className="flex items-center">
-                        <div className="w-32 bg-gray-200 rounded-full h-2 mr-3">
+                    
+                    <div className="border border-gray-200 rounded-lg p-4 bg-white">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <span className="text-sm font-semibold text-gray-900">Q3 2026</span>
+                          <p className="text-xs text-gray-500 mt-1">Jul-Sep</p>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-sm font-bold text-yellow-600">$1.5M</span>
+                          <p className="text-xs text-gray-500">Projected Revenue</p>
+                        </div>
+                      </div>
+                      <div className="mb-3">
+                        <div className="w-full bg-gray-200 rounded-full h-2">
                           <div className="bg-yellow-500 h-2 rounded-full" style={{width: "70%"}}></div>
                         </div>
-                        <span className="text-sm text-gray-600">Moderate</span>
+                        <div className="flex justify-between mt-1">
+                          <span className="text-xs text-gray-500">70% Capacity</span>
+                          <span className="text-xs text-yellow-600">-17% vs Q2 2026</span>
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        <span className="font-medium">Key Drivers:</span> Summer travel lull, back-to-school preparation
                       </div>
                     </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-gray-700">Q4 2026</span>
-                      <div className="flex items-center">
-                        <div className="w-32 bg-gray-200 rounded-full h-2 mr-3">
+                    
+                    <div className="border border-gray-200 rounded-lg p-4 bg-white">
+                      <div className="flex items-center justify-between mb-3">
+                        <div>
+                          <span className="text-sm font-semibold text-gray-900">Q4 2026</span>
+                          <p className="text-xs text-gray-500 mt-1">Oct-Dec</p>
+                        </div>
+                        <div className="text-right">
+                          <span className="text-sm font-bold text-purple-600">$2.1M</span>
+                          <p className="text-xs text-gray-500">Projected Revenue</p>
+                        </div>
+                      </div>
+                      <div className="mb-3">
+                        <div className="w-full bg-gray-200 rounded-full h-2">
                           <div className="bg-purple-500 h-2 rounded-full" style={{width: "90%"}}></div>
                         </div>
-                        <span className="text-sm text-gray-600">Holiday peak</span>
+                        <div className="flex justify-between mt-1">
+                          <span className="text-xs text-gray-500">90% Capacity</span>
+                          <span className="text-xs text-purple-600">+40% vs Q3 2026</span>
+                        </div>
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        <span className="font-medium">Key Drivers:</span> Holiday gift season, year-end wellness focus
                       </div>
                     </div>
                   </div>
