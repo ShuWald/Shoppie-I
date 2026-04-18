@@ -1,7 +1,10 @@
 from typing import List
 from .models import TrendingProduct, ProductCategory, BusinessRuleEvaluation, SuggestedAction
 
+# Evaluate products (using attached attributes/keywords) against PoP business rules
 class BusinessRulesEngine:
+
+    # Hardcoded PoP categories and keywords
     def __init__(self):
         self.pop_categories = {
             ProductCategory.GINGER: True,
@@ -24,6 +27,7 @@ class BusinessRulesEngine:
             "cough relief", "anxiety relief", "wellness"
         ]
     
+    # Returns a BusinessRuleEvaluation based on how well the product aligns with PoP's business rules
     def evaluate_product(self, product: TrendingProduct) -> BusinessRuleEvaluation:
         """Evaluate if a trending product aligns with Prince of Peace business rules"""
         
@@ -57,6 +61,8 @@ class BusinessRulesEngine:
             supply_chain_feasible=supply_chain_feasible
         )
     
+    # Functions to individually check each business rule based on product attributes/keywords
+    
     def _check_organic_compatibility(self, product: TrendingProduct) -> bool:
         """Check if product can be made organic"""
         text_to_check = f"{product.name} {product.description} {' '.join(product.trend_keywords)}".lower()
@@ -89,6 +95,8 @@ class BusinessRulesEngine:
         easy_categories = [ProductCategory.GINGER, ProductCategory.TEA, ProductCategory.GINSENG, ProductCategory.HONEY]
         return product.category in easy_categories
     
+
+    # Suggest action based on business rule evaluation and product attributes
     def suggest_action(self, product: TrendingProduct, evaluation: BusinessRuleEvaluation) -> SuggestedAction:
         """Suggest whether to distribute existing product or develop new"""
         

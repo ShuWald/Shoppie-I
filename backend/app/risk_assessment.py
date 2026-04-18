@@ -1,12 +1,16 @@
 from typing import List
 from .models import TrendingProduct, RiskAssessment, RiskLevel
 
+# Assesses risks based on keyword-matching with product attributes
+# Also hardcoded logic, will need adapting to real data/features
 class RiskAssessmentEngine:
     def __init__(self):
+        # Fixed risk assessment keywords
         self.high_tariff_countries = ["china", "india", "vietnam"]
         self.fda_concern_keywords = ["cbd", "thc", "psychoactive", "controlled", "unapproved"]
         self.supply_chain_risk_factors = ["exotic", "rare", "endangered", "wildcrafted"]
     
+    # Returns a RiskAssessment based on assessed risk in all categories 
     def assess_risks(self, product: TrendingProduct) -> RiskAssessment:
         """Assess various risks associated with the product"""
         
@@ -25,6 +29,8 @@ class RiskAssessmentEngine:
             flags=flags
         )
     
+    # The following functions assess risk in specific categories based on product ?tags?? idk
+
     def _assess_tariff_risk(self, product: TrendingProduct) -> RiskLevel:
         """Assess tariff risk based on product category and likely sourcing"""
         # Higher risk for products likely sourced from high-tariff countries
@@ -71,6 +77,7 @@ class RiskAssessmentEngine:
         else:
             return RiskLevel.LOW
     
+    # Generate risk flags based on the assessed risks throughout categories
     def _generate_flags(self, product: TrendingProduct, tariff_risk: RiskLevel, 
                        fda_concern: RiskLevel, supply_chain_risk: RiskLevel) -> List[str]:
         """Generate specific risk flags"""

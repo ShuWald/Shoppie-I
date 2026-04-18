@@ -1,3 +1,5 @@
+# All of this is mock data, needs to be replaced with real data fetching logic
+
 import requests
 from typing import List, Dict
 from datetime import datetime
@@ -5,6 +7,7 @@ import json
 import random
 from .models import TrendingProduct, ProductCategory
 
+# Fetches trend data 
 class TrendAnalyzer:
     def __init__(self):
         self.trend_sources = [
@@ -14,6 +17,8 @@ class TrendAnalyzer:
             "industry_reports"
         ]
     
+    # Simulate fetching data and return as a TrendingProduct
+    # Will probably need a lot of validation logic especially if we use different data sources
     def fetch_trending_products(self) -> List[TrendingProduct]:
         """Simulate fetching trending health/wellness products from various sources"""
         trending_data = self._get_mock_trending_data()
@@ -34,6 +39,7 @@ class TrendAnalyzer:
         
         return products
     
+    # Generates fake data
     def _get_mock_trending_data(self) -> List[Dict]:
         """Mock data for trending health/wellness products"""
         return [

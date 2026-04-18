@@ -2,6 +2,8 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Literal
 from enum import Enum
 
+# Defines fixed data models for consistent communication across components
+
 class ProductCategory(str, Enum):
     GINGER = "ginger"
     TEA = "tea"
