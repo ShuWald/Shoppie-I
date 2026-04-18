@@ -16,7 +16,6 @@ class RiskAssessmentEngine:
     # Returns a RiskAssessment based on assessed risk in all categories 
     def assess_risks(self, product: TrendingProduct) -> RiskAssessment:
         """Assess various risks associated with the product"""
-        log_message(f"[RiskAssessment] START assess_risks: {product.name}", additional_route="risk_assessment")
         
         tariff_risk = self._assess_tariff_risk(product)
         fda_concern = self._assess_fda_concern(product)
@@ -32,12 +31,6 @@ class RiskAssessmentEngine:
             competition_risk=competition_risk,
             flags=flags
         )
-        log_message(
-            f"[RiskAssessment] DONE assess_risks: {product.name} "
-            f"(tariff={tariff_risk.value}, fda={fda_concern.value}, supply={supply_chain_risk.value}, comp={competition_risk.value}, flags={len(flags)})",
-            additional_route="risk_assessment",
-        )
-        return assessment
     
     # The following functions assess risk in specific categories based on product ?tags?? idk
 

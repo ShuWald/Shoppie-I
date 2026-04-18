@@ -14,10 +14,6 @@ INFO_LOG_FILE = LOG_DIR / "info.log"
 # Create Log directory and main log files
 def ensure_log_directory() -> None:
 	LOG_DIR.mkdir(parents=True, exist_ok=True)
-	# Reset all existing log files at startup so each run starts clean.
-	for existing_log in LOG_DIR.glob("*.log"):
-		existing_log.write_text("", encoding="utf-8")
-	# Ensure base log files exist even on first run.
 	MAIN_LOG_FILE.touch(exist_ok=True)
 	INFO_LOG_FILE.touch(exist_ok=True)
 
