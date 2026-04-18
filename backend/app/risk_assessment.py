@@ -1,7 +1,7 @@
 import re
 from typing import List
-from .models import TrendingProduct, RiskAssessment, RiskLevel
-from .filter import get_fda_substances, check_tariff_rates as check_tariff_api, estimate_shelf_life as estimate_shelf_life_api
+from models import TrendingProduct, RiskAssessment, RiskLevel
+from filter import get_fda_substances, check_tariff_rates as check_tariff_api, estimate_shelf_life as estimate_shelf_life_api
 
 # Assesses risks based on keyword-matching with product attributes
 # Also hardcoded logic, will need adapting to real data/features
