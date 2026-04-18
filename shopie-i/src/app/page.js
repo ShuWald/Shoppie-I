@@ -18,6 +18,14 @@ export default function Home() {
 
   const [activeTab, setActiveTab] = useState("overview");
 
+  const [sortBy, setSortBy] = useState("popScore");
+
+  const [priorityFilter, setPriorityFilter] = useState("all");
+
+  const [categoryFilter, setCategoryFilter] = useState("all");
+
+  const [expandedReports, setExpandedReports] = useState(new Set());
+
 
 
   useEffect(() => {
@@ -109,6 +117,96 @@ export default function Home() {
       ? "text-blue-600 bg-blue-100" 
 
       : "text-purple-600 bg-purple-100";
+
+  };
+
+
+
+  const sortProducts = (products) => {
+
+    const sortedProducts = [...products];
+
+    switch (sortBy) {
+
+      case "alphabetical":
+
+        return sortedProducts.sort((a, b) => a.product.name.localeCompare(b.product.name));
+
+      case "competition":
+
+        return sortedProducts.sort((a, b) => {
+
+          const competitionOrder = { low: 0, medium: 1, high: 2 };
+
+          return competitionOrder[a.risk_assessment.competition_risk] - competitionOrder[b.risk_assessment.competition_risk];
+
+        });
+
+      case "flagged":
+
+        return sortedProducts.filter(product => product.risk_assessment.flags && product.risk_assessment.flags.length > 0);
+
+      case "popScore":
+
+      default:
+
+        return sortedProducts.sort((a, b) => b.pop_relevance_score - a.pop_relevance_score);
+
+    }
+
+  };
+
+
+
+  const filterProductsByCategory = (products) => {
+
+    if (categoryFilter === "all") return products;
+
+    return products.filter(product => product.product.category.toLowerCase() === categoryFilter.toLowerCase());
+
+  };
+
+
+
+  const formatCategoryName = (name) => {
+
+    return name.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+
+  };
+
+
+
+  const getUniqueCategories = () => {
+
+    const allProducts = [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products];
+
+    const categories = [...new Set(allProducts.map(p => p.product.category))];
+
+    return categories.sort();
+
+  };
+
+
+
+  const toggleReportExpansion = (productId) => {
+
+    setExpandedReports(prev => {
+
+      const newSet = new Set(prev);
+
+      if (newSet.has(productId)) {
+
+        newSet.delete(productId);
+
+      } else {
+
+        newSet.add(productId);
+
+      }
+
+      return newSet;
+
+    });
 
   };
 
@@ -343,17 +441,137 @@ export default function Home() {
             {/* Summary Insights */}
             <div className="mb-8">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Key Insights</h2>
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+              <div className="grid grid-cols-3 gap-4">
                 {report.summary_insights.map((insight, index) => {
                   const cardData = parseInsightCard(insight);
                   return (
                     <div key={index} className="bg-white rounded-lg shadow p-4 border border-gray-200 hover:shadow-md transition-shadow">
-                      <p className="text-sm text-gray-500 uppercase tracking-wide">{cardData.title}</p>
-                      <p className={`${cardData.valueClass || "text-2xl font-bold"} text-gray-900 mt-1`}>{cardData.value}</p>
-                      <p className="text-sm text-gray-600 mt-1">{cardData.subtitle}</p>
+                      <p className="text-sm text-gray-500 uppercase tracking-wide break-words">{cardData.title}</p>
+                      <p className={`${cardData.valueClass || "text-2xl font-bold"} text-gray-900 mt-1 break-words`}>{cardData.value}</p>
+                      <p className="text-sm text-gray-600 mt-1 break-words">{cardData.subtitle}</p>
                     </div>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* Actionable Recommendations Panel */}
+            <div className="mb-8">
+              <h2 className="text-lg font-semibold text-gray-900 mb-4">Actionable Recommendations</h2>
+              <div className="bg-white rounded-lg shadow p-6 border border-gray-200">
+                <div className="space-y-4">
+                  {/* Generate recommendations based on report data */}
+                  {(() => {
+                    const recommendations = [];
+                    
+                    // Get top high priority product for launch recommendation
+                    if (report.high_priority_products && report.high_priority_products.length > 0) {
+                      const topProduct = report.high_priority_products[0];
+                      recommendations.push({
+                        type: 'launch',
+                        product: topProduct.product.name,
+                        popScore: topProduct.pop_relevance_score.toFixed(1),
+                        priority: 'high'
+                      });
+                    }
+
+                    // Find products with high regulatory risks
+                    const highRiskProducts = [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products]
+                      .filter(p => p.risk_assessment.fda_concern === 'high' || p.risk_assessment.tariff_risk === 'high')
+                      .slice(0, 2);
+                    
+                    highRiskProducts.forEach(product => {
+                      recommendations.push({
+                        type: 'regulatory',
+                        product: product.product.name,
+                        priority: 'medium'
+                      });
+                    });
+
+                    // Find top category for expansion
+                    const categoryCounts = {};
+                    [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products].forEach(product => {
+                      const category = product.product.category;
+                      categoryCounts[category] = (categoryCounts[category] || 0) + 1;
+                    });
+                    
+                    const topCategory = Object.entries(categoryCounts)
+                      .sort(([,a], [,b]) => b - a)[0];
+                    
+                    if (topCategory) {
+                      recommendations.push({
+                        type: 'expansion',
+                        category: topCategory[0],
+                        count: topCategory[1],
+                        priority: 'medium'
+                      });
+                    }
+
+                    return recommendations.map((rec, index) => {
+                      let recommendationText = '';
+                      let summaryText = '';
+                      let iconColor = '';
+                      
+                      if (rec.type === 'launch') {
+                        recommendationText = `Prioritize launching: ${rec.product}`;
+                        summaryText = `High PoP score (${rec.popScore || '85+'}) indicates strong market potential and low risk`;
+                        iconColor = 'text-green-600 bg-green-100';
+                      } else if (rec.type === 'regulatory') {
+                        recommendationText = `Investigate regulatory risks for: ${rec.product}`;
+                        summaryText = `FDA or tariff concerns identified - review compliance requirements before market entry`;
+                        iconColor = 'text-yellow-600 bg-yellow-100';
+                      } else if (rec.type === 'expansion') {
+                        const formattedCategory = rec.category.split('_').map(word => 
+                          word.charAt(0).toUpperCase() + word.slice(1)
+                        ).join(' ');
+                        recommendationText = `Explore expansion in: ${formattedCategory}`;
+                        summaryText = `${rec.count || 'Multiple'} products in this category show strong growth trends`;
+                        iconColor = 'text-blue-600 bg-blue-100';
+                      }
+                      
+                      return (
+                        <div key={index} className={`p-4 rounded-lg border-2 hover:shadow-md transition-all duration-200 ${
+                          rec.type === 'launch' ? 'bg-green-50 border-green-200 hover:border-green-300' :
+                          rec.type === 'regulatory' ? 'bg-yellow-50 border-yellow-200 hover:border-yellow-300' :
+                          'bg-blue-50 border-blue-200 hover:border-blue-300'
+                        }`}>
+                          <div className="flex items-start">
+                            <div className={`w-10 h-10 rounded-full flex items-center justify-center mr-3 mt-0.5 flex-shrink-0 ${iconColor} shadow-sm`}>
+                              {rec.type === 'launch' && (
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                                </svg>
+                              )}
+                              {rec.type === 'regulatory' && (
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                                </svg>
+                              )}
+                              {rec.type === 'expansion' && (
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                                </svg>
+                              )}
+                            </div>
+                            <div className="flex-1">
+                              <div className={`inline-block px-2 py-1 rounded text-xs font-semibold mb-2 ${
+                                rec.type === 'launch' ? 'bg-green-100 text-green-800' :
+                                rec.type === 'regulatory' ? 'bg-yellow-100 text-yellow-800' :
+                                'bg-blue-100 text-blue-800'
+                              }`}>
+                                {rec.type === 'launch' ? 'LAUNCH' : 
+                                 rec.type === 'regulatory' ? 'RISK REVIEW' : 
+                                 'EXPANSION'}
+                              </div>
+                              <p className="text-sm font-bold text-gray-900 mb-1 leading-tight">{recommendationText}</p>
+                              <p className="text-xs text-gray-600 leading-relaxed">{summaryText}</p>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
               </div>
             </div>
           </div>
@@ -361,64 +579,121 @@ export default function Home() {
 
         {activeTab === "products" && (
           <div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-6">All Products</h2>
+            <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center space-x-2">
+                <label htmlFor="priority-select" className="text-sm font-medium text-gray-700">Products:</label>
+                <select
+                  id="priority-select"
+                  value={priorityFilter}
+                  onChange={(e) => setPriorityFilter(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium text-gray-900"
+                >
+                  <option value="all">All Products</option>
+                  <option value="high">High Priority</option>
+                  <option value="medium">Medium Priority</option>
+                  <option value="low">Low Priority</option>
+                </select>
+              </div>
+              <div className="flex items-center space-x-2">
+                <label htmlFor="sort-select" className="text-sm font-medium text-gray-700">Sort:</label>
+                <select
+                  id="sort-select"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-gray-900"
+                >
+                  <option value="popScore">PoP Score</option>
+                  <option value="alphabetical">Alphabetical</option>
+                  <option value="competition">Competition</option>
+                  <option value="flagged">Flagged</option>
+                </select>
+              </div>
+            </div>
+            
+            {/* Category Search Terms */}
+            <div className="mb-6">
+              <div className="text-sm font-medium text-gray-700 mb-3">Filter by Category:</div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setCategoryFilter("all")}
+                  className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                    categoryFilter === "all"
+                      ? "bg-blue-600 text-white"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  All Categories
+                </button>
+                {getUniqueCategories().map((category) => (
+                  <button
+                    key={category}
+                    onClick={() => setCategoryFilter(category)}
+                    className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                      categoryFilter === category
+                        ? "bg-blue-600 text-white"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                  >
+                    {formatCategoryName(category)}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="space-y-4">
-              {/* High Priority Products */}
-              {report.high_priority_products.length > 0 && (
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                    High Priority Opportunities ({report.high_priority_products.length})
-                  </h3>
-                  {report.high_priority_products.map((evaluation, index) => (
-                    <ProductCard 
-                      key={`high-${index}`} 
-                      evaluation={evaluation} 
-                      getScoreColor={getScoreColor}
-                      getScoreBgColor={getScoreBgColor}
-                      getRiskColor={getRiskColor}
-                      getActionColor={getActionColor}
-                    />
-                  ))}
-                </div>
-              )}
+              {/* Get and display filtered products */}
+              {(() => {
+                let allProducts = [];
+                
+                if (priorityFilter === "all") {
+                  allProducts = [
+                    ...filterProductsByCategory(report.high_priority_products).map(p => ({...p, priority: "high"})),
+                    ...filterProductsByCategory(report.medium_priority_products).map(p => ({...p, priority: "medium"})),
+                    ...filterProductsByCategory(report.low_priority_products).map(p => ({...p, priority: "low"}))
+                  ];
+                } else if (priorityFilter === "high") {
+                  allProducts = filterProductsByCategory(report.high_priority_products).map(p => ({...p, priority: "high"}));
+                } else if (priorityFilter === "medium") {
+                  allProducts = filterProductsByCategory(report.medium_priority_products).map(p => ({...p, priority: "medium"}));
+                } else if (priorityFilter === "low") {
+                  allProducts = filterProductsByCategory(report.low_priority_products).map(p => ({...p, priority: "low"}));
+                }
 
-              {/* Medium Priority Products */}
-              {report.medium_priority_products.length > 0 && (
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                    Medium Priority Considerations ({report.medium_priority_products.length})
-                  </h3>
-                  {report.medium_priority_products.map((evaluation, index) => (
-                    <ProductCard 
-                      key={`med-${index}`} 
-                      evaluation={evaluation} 
-                      getScoreColor={getScoreColor}
-                      getScoreBgColor={getScoreBgColor}
-                      getRiskColor={getRiskColor}
-                      getActionColor={getActionColor}
-                    />
-                  ))}
-                </div>
-              )}
+                const sortedProducts = sortProducts(allProducts);
 
-              {/* Low Priority Products */}
-              {report.low_priority_products.length > 0 && (
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">
-                    Low Priority ({report.low_priority_products.length})
-                  </h3>
-                  {report.low_priority_products.map((evaluation, index) => (
-                    <ProductCard 
-                      key={`low-${index}`} 
-                      evaluation={evaluation} 
-                      getScoreColor={getScoreColor}
-                      getScoreBgColor={getScoreBgColor}
-                      getRiskColor={getRiskColor}
-                      getActionColor={getActionColor}
-                    />
-                  ))}
-                </div>
-              )}
+                if (sortedProducts.length > 0) {
+                  return (
+                    <div className="space-y-4">
+                      {sortedProducts.map((evaluation, index) => (
+                        <ProductCard 
+                          key={`${evaluation.priority}-${index}`} 
+                          evaluation={evaluation} 
+                          priority={evaluation.priority}
+                          expandedReports={expandedReports}
+                          toggleReportExpansion={toggleReportExpansion}
+                          formatCategoryName={formatCategoryName}
+                          getScoreColor={getScoreColor}
+                          getScoreBgColor={getScoreBgColor}
+                          getRiskColor={getRiskColor}
+                          getActionColor={getActionColor}
+                        />
+                      ))}
+                    </div>
+                  );
+                } else {
+                  return (
+                    <div className="text-center py-12">
+                      <div className="text-gray-400 text-lg">
+                        {sortBy === "flagged" 
+                          ? "No flagged products found."
+                          : categoryFilter === "all" 
+                            ? "No products found in this priority level."
+                            : `No products found in "${categoryFilter}" category for this priority level.`
+                        }
+                      </div>
+                    </div>
+                  );
+                }
+              })()}
             </div>
           </div>
         )}
@@ -773,9 +1048,37 @@ export default function Home() {
   );
 }
 
-function ProductCard({ evaluation, getScoreColor, getScoreBgColor, getRiskColor, getActionColor }) {
+function ProductCard({ evaluation, getScoreColor, getScoreBgColor, getRiskColor, getActionColor, priority, expandedReports, toggleReportExpansion, formatCategoryName }) {
 
   const { product, pop_relevance_score, risk_assessment, suggested_action, reasoning, confidence_score } = evaluation;
+
+  const isExpanded = expandedReports.has(product.name);
+
+
+
+  const getPriorityTag = (priority) => {
+
+    switch (priority) {
+
+      case "high":
+
+        return "bg-green-100 text-green-800";
+
+      case "medium":
+
+        return "bg-yellow-100 text-yellow-800";
+
+      case "low":
+
+        return "bg-gray-100 text-gray-800";
+
+      default:
+
+        return "bg-gray-100 text-gray-800";
+
+    }
+
+  };
 
 
 
@@ -787,7 +1090,29 @@ function ProductCard({ evaluation, getScoreColor, getScoreBgColor, getRiskColor,
 
         <div className="flex-1">
 
-          <h3 className="text-lg font-semibold text-gray-900">{product.name}</h3>
+          <div className="flex items-center gap-2 mb-1">
+
+            <h3 className="text-lg font-semibold text-gray-900">{product.name}</h3>
+
+            <span className={`px-2 py-1 text-xs font-medium rounded-full ${getPriorityTag(priority)}`}>
+
+              {priority.charAt(0).toUpperCase() + priority.slice(1)}
+
+            </span>
+
+            <button
+
+              onClick={() => toggleReportExpansion(product.name)}
+
+              className="text-blue-600 hover:text-blue-800 text-sm font-medium underline"
+
+            >
+
+              {isExpanded ? "Hide report" : "View full report"}
+
+            </button>
+
+          </div>
 
           <p className="text-sm text-gray-600 mt-1">{product.description}</p>
 
@@ -795,7 +1120,7 @@ function ProductCard({ evaluation, getScoreColor, getScoreBgColor, getRiskColor,
 
             <span className="px-2 py-1 bg-gray-100 text-xs rounded text-gray-700">
 
-              {product.category}
+              {formatCategoryName(product.category)}
 
             </span>
 
@@ -835,7 +1160,7 @@ function ProductCard({ evaluation, getScoreColor, getScoreBgColor, getRiskColor,
 
           <p className="text-xs text-gray-600">Trend Score</p>
 
-          <p className="text-sm font-semibold">{product.trend_score}</p>
+          <p className="text-sm font-semibold text-gray-900">{product.trend_score}</p>
 
         </div>
 
@@ -843,7 +1168,7 @@ function ProductCard({ evaluation, getScoreColor, getScoreBgColor, getRiskColor,
 
           <p className="text-xs text-gray-600">Market Growth</p>
 
-          <p className="text-sm font-semibold">{product.market_growth_rate}%</p>
+          <p className="text-sm font-semibold text-gray-900">{product.market_growth_rate}%</p>
 
         </div>
 
@@ -851,7 +1176,7 @@ function ProductCard({ evaluation, getScoreColor, getScoreBgColor, getRiskColor,
 
           <p className="text-xs text-gray-600">Consumer Interest</p>
 
-          <p className="text-sm font-semibold">{product.consumer_interest_score}</p>
+          <p className="text-sm font-semibold text-gray-900">{product.consumer_interest_score}</p>
 
         </div>
 
@@ -859,7 +1184,7 @@ function ProductCard({ evaluation, getScoreColor, getScoreBgColor, getRiskColor,
 
           <p className="text-xs text-gray-600">Confidence</p>
 
-          <p className="text-sm font-semibold">{confidence_score.toFixed(0)}%</p>
+          <p className="text-sm font-semibold text-gray-900">{confidence_score.toFixed(0)}%</p>
 
         </div>
 
@@ -931,7 +1256,7 @@ function ProductCard({ evaluation, getScoreColor, getScoreBgColor, getRiskColor,
 
         <div className="flex-1">
 
-          <span className={`px-3 py-1 text-sm rounded-full font-medium ${getActionColor(suggested_action)}`}>
+          <span className={`px-3 py-1 text-sm rounded-lg font-medium whitespace-nowrap inline-block ${getActionColor(suggested_action)}`}>
 
             {suggested_action}
 
@@ -948,6 +1273,199 @@ function ProductCard({ evaluation, getScoreColor, getScoreBgColor, getRiskColor,
         </div>
 
       </div>
+
+      {/* Detailed Report Section */}
+      {isExpanded && (
+        <div className="mt-6 pt-6 border-t border-gray-200">
+          <h4 className="text-lg font-semibold text-gray-900 mb-4">Detailed Product Analysis</h4>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            {/* Product Details */}
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h5 className="font-semibold text-gray-900 mb-3">Product Information</h5>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Product Name:</span>
+                  <span className="font-medium text-gray-900">{product.name}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Category:</span>
+                  <span className="font-medium text-gray-900">{formatCategoryName(product.category)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Source:</span>
+                  <span className="font-medium text-gray-900">{product.source}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Description:</span>
+                  <span className="font-medium text-gray-900 max-w-xs">{product.description}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Performance Metrics */}
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h5 className="font-semibold text-gray-900 mb-3">Performance Metrics</h5>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">PoP Score:</span>
+                  <span className={`font-bold ${getScoreColor(pop_relevance_score)}`}>{pop_relevance_score.toFixed(1)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Trend Score:</span>
+                  <span className="font-medium text-gray-900">{product.trend_score}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Market Growth:</span>
+                  <span className="font-medium text-gray-900">{product.market_growth_rate}%</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Consumer Interest:</span>
+                  <span className="font-medium text-gray-900">{product.consumer_interest_score}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Confidence Level:</span>
+                  <span className="font-medium text-gray-900">{confidence_score.toFixed(0)}%</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Risk Assessment Details */}
+          <div className="bg-gray-50 rounded-lg p-4 mb-6">
+            <h5 className="font-semibold text-gray-900 mb-3">Risk Assessment</h5>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+              <div className="text-center">
+                <div className={`text-lg font-bold ${getRiskColor(risk_assessment.tariff_risk)}`}>
+                  {risk_assessment.tariff_risk.toUpperCase()}
+                </div>
+                <div className="text-xs text-gray-600">Tariff Risk</div>
+              </div>
+              <div className="text-center">
+                <div className={`text-lg font-bold ${getRiskColor(risk_assessment.fda_concern)}`}>
+                  {risk_assessment.fda_concern.toUpperCase()}
+                </div>
+                <div className="text-xs text-gray-600">FDA Concern</div>
+              </div>
+              <div className="text-center">
+                <div className={`text-lg font-bold ${getRiskColor(risk_assessment.supply_chain_risk)}`}>
+                  {risk_assessment.supply_chain_risk.toUpperCase()}
+                </div>
+                <div className="text-xs text-gray-600">Supply Chain</div>
+              </div>
+              <div className="text-center">
+                <div className={`text-lg font-bold ${getRiskColor(risk_assessment.competition_risk)}`}>
+                  {risk_assessment.competition_risk.toUpperCase()}
+                </div>
+                <div className="text-xs text-gray-600">Competition</div>
+              </div>
+            </div>
+            
+            {risk_assessment.flags.length > 0 && (
+              <div>
+                <h6 className="font-medium text-gray-900 mb-2">Risk Flags:</h6>
+                <div className="flex flex-wrap gap-2">
+                  {risk_assessment.flags.map((flag, index) => (
+                    <span key={index} className="px-2 py-1 bg-red-100 text-xs rounded text-red-700">
+                      {flag}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Recommendation */}
+          <div className="bg-blue-50 rounded-lg p-4">
+            <h5 className="font-semibold text-gray-900 mb-3">Recommendation</h5>
+            <div className="mb-3">
+              <span className={`px-3 py-1 text-sm rounded-lg font-medium whitespace-nowrap inline-block ${getActionColor(suggested_action)}`}>
+                {suggested_action}
+              </span>
+            </div>
+            <div className="mb-4">
+              <h6 className="font-medium text-gray-900 mb-2">Detailed Reasoning:</h6>
+              <p className="text-sm text-gray-700 mb-3">{reasoning}</p>
+              
+              {/* Additional Analysis */}
+              <div className="space-y-3">
+                <div className="border-l-4 border-blue-400 pl-3">
+                  <h6 className="font-medium text-gray-900 text-sm mb-1">Market Analysis:</h6>
+                  <p className="text-sm text-gray-600">
+                    This product shows a {product.market_growth_rate}% market growth rate with {product.consumer_interest_score}% consumer interest, 
+                    indicating {product.market_growth_rate > 70 ? 'strong' : product.market_growth_rate > 40 ? 'moderate' : 'limited'} market potential. 
+                    The trend score of {product.trend_score} suggests {product.trend_score > 70 ? 'high' : product.trend_score > 40 ? 'moderate' : 'low'} consumer demand.
+                  </p>
+                </div>
+                
+                <div className="border-l-4 border-yellow-400 pl-3">
+                  <h6 className="font-medium text-gray-900 text-sm mb-1">Risk Assessment:</h6>
+                  <p className="text-sm text-gray-600">
+                    Risk factors include {risk_assessment.tariff_risk} tariff risk, {risk_assessment.fda_concern} FDA concerns, 
+                    {risk_assessment.supply_chain_risk} supply chain challenges, and {risk_assessment.competition_risk} competitive pressure.
+                    {risk_assessment.flags.length > 0 && ` Key concerns: ${risk_assessment.flags.join(', ')}.`}
+                    Overall risk profile is {risk_assessment.tariff_risk === 'low' && risk_assessment.fda_concern === 'low' && risk_assessment.supply_chain_risk === 'low' && risk_assessment.competition_risk === 'low' ? 'favorable' : 'moderate to high'}.
+                  </p>
+                </div>
+                
+                <div className="border-l-4 border-green-400 pl-3">
+                  <h6 className="font-medium text-gray-900 text-sm mb-1">Strategic Fit:</h6>
+                  <p className="text-sm text-gray-600">
+                    With a PoP relevance score of {pop_relevance_score.toFixed(1)}, this product {pop_relevance_score >= 80 ? 'strongly aligns' : pop_relevance_score >= 60 ? 'moderately aligns' : 'has limited alignment'} 
+                    with Prince of Peace's brand and market position. 
+                    The {formatCategoryName(product.category)} category shows {pop_relevance_score >= 70 ? 'strong' : pop_relevance_score >= 50 ? 'moderate' : 'emerging'} performance 
+                    in our portfolio.
+                  </p>
+                </div>
+                
+                <div className="border-l-4 border-purple-400 pl-3">
+                  <h6 className="font-medium text-gray-900 text-sm mb-1">Implementation Considerations:</h6>
+                  <p className="text-sm text-gray-600">
+                    {suggested_action === "Distribute existing product" 
+                      ? `Leverage current supply chain and distribution networks. Estimated time to market: 3-6 months. 
+                         Initial investment focus on marketing and inventory management.`
+                      : `Requires new product development cycle. Estimated time to market: 12-18 months. 
+                         Investment needed for R&D, testing, and regulatory compliance.`
+                    }
+                    Confidence level: {confidence_score.toFixed(0)}% in projected outcomes.
+                  </p>
+                </div>
+              </div>
+            </div>
+            
+            {/* Key Metrics Summary */}
+            <div className="bg-white rounded-lg p-3 border border-blue-200">
+              <h6 className="font-medium text-gray-900 text-sm mb-2">Key Success Indicators:</h6>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Market Potential:</span>
+                  <span className={`font-medium ${getScoreColor(product.market_growth_rate)}`}>
+                    {product.market_growth_rate > 70 ? 'High' : product.market_growth_rate > 40 ? 'Medium' : 'Low'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Risk Level:</span>
+                  <span className={`font-medium ${getRiskColor(risk_assessment.competition_risk)}`}>
+                    {risk_assessment.competition_risk === 'low' ? 'Low' : risk_assessment.competition_risk === 'medium' ? 'Medium' : 'High'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Brand Fit:</span>
+                  <span className={`font-medium ${getScoreColor(pop_relevance_score)}`}>
+                    {pop_relevance_score >= 80 ? 'Excellent' : pop_relevance_score >= 60 ? 'Good' : 'Moderate'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Timeline:</span>
+                  <span className="font-medium text-gray-900">
+                    {suggested_action === "Distribute existing product" ? '3-6 months' : '12-18 months'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
 

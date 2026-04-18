@@ -34,7 +34,7 @@ class RiskAssessmentEngine:
     def _assess_tariff_risk(self, product: TrendingProduct) -> RiskLevel:
         """Assess tariff risk based on product category and likely sourcing"""
         # Higher risk for products likely sourced from high-tariff countries
-        high_risk_categories = ["herbal_supplement", "tea"]
+        high_risk_categories = ["Herbal Supplement", "tea"]
         if product.category in high_risk_categories:
             return RiskLevel.MEDIUM
         return RiskLevel.LOW
