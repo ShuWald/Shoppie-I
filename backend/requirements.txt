@@ -6,3 +6,4 @@ pytrends
 requests
 lxml
 openpyxl
+openai # if using it in Filter.py
