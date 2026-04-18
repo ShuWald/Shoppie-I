@@ -1,6 +1,5 @@
-# FastAPI Backend
+FastAPI backend
 
-This folder contains a lightweight FastAPI service for the hackathon app.
 
 ## Setup
 
@@ -11,12 +10,11 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8000
 ```
 
-## Endpoints
+Note: main.py is the entry point, so reserved for routing logic only
 
-- `GET /health` - basic health check
-- `POST /api/chat` - starter chat endpoint for future LangChain integration
-- `GET /docs` - FastAPI interactive API docs
+## Endpoints
+- `GET /docs` - Docs for all our configured routes
+- `GET /test` - Testing route (Maybe delete after testing?)
 
 ## Frontend CORS
-
-The backend allows requests from the default Next.js dev server at `http://localhost:3000`.
+The backend allows requests from the default Next.js dev server at `http://localhost:3000`
