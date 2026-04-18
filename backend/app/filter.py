@@ -6,6 +6,7 @@ import re
 import json
 from typing import List
 from bs4 import BeautifulSoup
+from csv_data_processor import CSVDataProcessor
 
 def get_fda_substances():
     substances = []
@@ -264,4 +265,57 @@ def check_tariffs_endpoint(country: str, threshold: float = 15.0) -> dict:
         "acceptable_tariff_rates": acceptable,
         "high_tariff_threshold_percent": threshold
     }
+
+# CSV Integration Functions
+def load_csv_products(csv_path: str = "trends_data.csv"):
+    """Load products from CSV and convert to TrendingProduct objects"""
+    processor = CSVDataProcessor(csv_path)
+    return processor.get_unique_products()
+
+def filter_csv_products(csv_path: str = "trends_data.csv", 
+                      min_trend_score: float = 30.0,
+                      categories: List[str] = None,
+                      limit: int = 50) -> List:
+    """Filter products from CSV based on criteria"""
+    processor = CSVDataProcessor(csv_path)
+    products = processor.get_unique_products()
+    
+    # Filter by trend score
+    filtered = [p for p in products if p.trend_score >= min_trend_score]
+    
+    # Filter by categories if specified
+    if categories:
+        filtered = [p for p in filtered if p.category.value in categories]
+    
+    # Sort by trend score and limit
+    filtered.sort(key=lambda x: x.trend_score, reverse=True)
+    return filtered[:limit]
+
+def get_csv_products_by_category(csv_path: str = "trends_data.csv") -> dict:
+    """Get products from CSV grouped by category"""
+    processor = CSVDataProcessor(csv_path)
+    return processor.get_products_by_category()
+
+def assess_csv_risks(csv_path: str = "trends_data.csv", 
+                    limit: int = 20) -> List:
+    """Load CSV products and assess risks for each"""
+    from risk_assessment import RiskAssessmentEngine
+    
+    products = load_csv_products(csv_path)
+    risk_engine = RiskAssessmentEngine()
+    
+    # Get top products by trend score
+    products.sort(key=lambda x: x.trend_score, reverse=True)
+    top_products = products[:limit]
+    
+    # Assess risks for each product
+    assessed_products = []
+    for product in top_products:
+        risk_assessment = risk_engine.assess_risks(product)
+        assessed_products.append({
+            'product': product,
+            'risk_assessment': risk_assessment
+        })
+    
+    return assessed_products
 
