@@ -7,9 +7,6 @@ import json
 from typing import List
 from bs4 import BeautifulSoup
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-
 def get_fda_substances():
     substances = []
     
@@ -117,12 +114,11 @@ def get_fda_substances():
     
     return list(set(substances))  # Remove duplicates
 
-@app.get("/fda-substances")
 def get_fda_substances_endpoint():
     substances = get_fda_substances()
     return {"substances": substances}
 
-@app.post("/check-restricted")
+
 def check_restricted_ingredients(ingredients: List[str]):
     substances = get_fda_substances()
     restricted = [ing for ing in ingredients if ing.lower() in [s.lower() for s in substances]]
@@ -179,7 +175,6 @@ def estimate_shelf_life(ingredients: list) -> bool:
     except Exception as e:
         return True  # Default to True if API call fails
 
-@app.post("/estimate-shelf-life")
 def estimate_shelf_life_endpoint(ingredients: List[str]) -> dict:
     """
     Endpoint to estimate shelf life of a product.
@@ -258,7 +253,6 @@ def check_tariff_rates(country: str, high_tariff_threshold: float = 15.0) -> boo
         # Default to True if API call fails
         return True
 
-@app.post("/check-tariffs")
 def check_tariffs_endpoint(country: str, threshold: float = 15.0) -> dict:
     """
     Endpoint to check tariff rates for a country.
