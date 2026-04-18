@@ -6,19 +6,21 @@ import re
 import json
 from typing import List
 from bs4 import BeautifulSoup
+from .flexlog import log_message
 
 def get_fda_substances():
     substances = []
+    log_message("[filter] START get_fda_substances", additional_route="filter")
     
     # Get approved food substances from FDA web interface
     url = "https://www.hfpappexternal.fda.gov/scripts/fdcc/index.cfm?set=FoodSubstances"
     response = requests.get(url)
     if response.status_code == 200:
-        tables = pd.read_html(response.text)
-        if tables:
-            df = tables[0]
-            approved_substances = df.get('Substance', df.iloc[:, 0]).dropna().tolist()
-            substances.extend(approved_substances)
+        # NOTE: Disabled HTML table parsing for now.
+        # pd.read_html(response.text) has been producing FileNotFoundError with huge HTML payloads in this environment.
+        # Re-enable once we have a stable parser path for this endpoint.
+        print("[filter] FDA table parsing temporarily disabled; using other data sources for now.")
+        log_message("[filter] FDA table parsing temporarily disabled", additional_route="filter")
     
     # Get banned/restricted peptides from openFDA enforcement API
     enforcement_url = "https://api.fda.gov/food/enforcement.json?search=peptide&limit=1000"
@@ -112,7 +114,9 @@ def get_fda_substances():
         # If scraping fails, continue with known substances
         pass
     
-    return list(set(substances))  # Remove duplicates
+    unique_substances = list(set(substances))
+    log_message(f"[filter] DONE get_fda_substances: {len(unique_substances)} substances", additional_route="filter")
+    return unique_substances  # Remove duplicates
 
 def get_fda_substances_endpoint():
     substances = get_fda_substances()
