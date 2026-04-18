@@ -1,6 +1,7 @@
 from typing import Annotated
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 from .evaluator import ProductEvaluator
 from .models import TrendingReport
 
@@ -89,4 +90,3 @@ No authentication
 Assumes ProductEvaluator is reliable
 → If it's slow or unstable, the API will be too
 '''
-
