@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, List
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
@@ -15,7 +15,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.get("/fda-substances")
 def get_fda_substances():
     url = "https://www.hfpappexternal.fda.gov/scripts/fdcc/index.cfm?set=FoodSubstances"
     response = requests.get(url)
@@ -27,8 +26,22 @@ def get_fda_substances():
             df = tables[0]
             # Assuming the table has a column with substance names, e.g., 'Substance'
             substances = df.get('Substance', df.iloc[:, 0]).tolist()
-            return {"substances": substances}
+            return substances
         else:
-            return {"error": "No tables found on the page"}
+            return []
     else:
-        return {"error": f"Failed to fetch data, status code: {response.status_code}"}
+        return []
+
+@app.get("/fda-substances")
+def get_fda_substances_endpoint():
+    substances = get_fda_substances()
+    return {"substances": substances}
+
+@app.post("/check-restricted")
+def check_restricted_ingredients(ingredients: List[str]):
+    substances = get_fda_substances()
+    restricted = [ing for ing in ingredients if ing.lower() in [s.lower() for s in substances]]
+    return {
+        "contains_restricted": len(restricted) > 0,
+        "restricted_ingredients": restricted
+    }
