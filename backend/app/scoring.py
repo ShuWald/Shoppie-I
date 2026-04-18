@@ -1,6 +1,8 @@
 from typing import List
 from .models import TrendingProduct, BusinessRuleEvaluation, RiskAssessment, ProductEvaluation
 
+# Class containing product relevance scoring logic
+# Functions: calculate overall relevance score, calculate scores based on individual factors(trends, business rules, risk flags), generate reasoning (based on flags), calculate confidence
 class ScoringEngine:
     def __init__(self):
         self.weights = {
@@ -11,25 +13,26 @@ class ScoringEngine:
             'risk_adjustment': 0.15
         }
     
+    # Scores items based on:  1. trends, 2. business rules alignment, and 3. risk factors
     def calculate_pop_relevance_score(self, product: TrendingProduct, 
                                    business_rules: BusinessRuleEvaluation,
                                    risk_assessment: RiskAssessment) -> float:
         """Calculate Prince of Peace relevance score (0-100)"""
         
-        # Base trend and market scores
+        # Trends score
         trend_component = product.trend_score * self.weights['trend_score']
         growth_component = product.market_growth_rate * self.weights['market_growth']
         interest_component = product.consumer_interest_score * self.weights['consumer_interest']
         
-        # Business rules alignment
+        # Business rules alignment score
         business_rules_score = self._calculate_business_rules_score(business_rules)
         business_component = business_rules_score * self.weights['business_rules']
         
-        # Risk adjustment (lower risk = higher score)
+        # Risk penalty
         risk_penalty = self._calculate_risk_penalty(risk_assessment)
         risk_component = (100 - risk_penalty) * self.weights['risk_adjustment']
         
-        # Calculate final score
+        # Add up scores
         final_score = trend_component + growth_component + interest_component + business_component + risk_component
         
         # Ensure score is within bounds

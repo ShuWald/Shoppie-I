@@ -9,6 +9,7 @@ from .business_rules import BusinessRulesEngine
 from .risk_assessment import RiskAssessmentEngine
 from .scoring import ScoringEngine
 
+# Evaluates products
 class ProductEvaluator:
     def __init__(self):
         self.trend_analyzer = TrendAnalyzer()
