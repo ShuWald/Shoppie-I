@@ -5,7 +5,7 @@ from typing import List, Dict
 from datetime import datetime
 import json
 import random
-from .models import TrendingProduct, ProductCategory
+from models import TrendingProduct, ProductCategory
 
 # Fetches trend data 
 class TrendAnalyzer:

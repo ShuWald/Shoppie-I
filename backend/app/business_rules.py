@@ -1,5 +1,5 @@
 from typing import List
-from .models import TrendingProduct, ProductCategory, BusinessRuleEvaluation, SuggestedAction
+from models import TrendingProduct, ProductCategory, BusinessRuleEvaluation, SuggestedAction
 
 # Evaluate products (using attached attributes/keywords) against PoP business rules
 class BusinessRulesEngine:

@@ -1,14 +1,15 @@
 from typing import List
 from datetime import datetime
-from .models import (
+from models import (
     TrendingProduct, ProductEvaluation, TrendingReport, 
     BusinessRuleEvaluation, RiskAssessment, SuggestedAction
 )
-from .trend_analyzer import TrendAnalyzer
-from .business_rules import BusinessRulesEngine
-from .risk_assessment import RiskAssessmentEngine
-from .scoring import ScoringEngine
-from .flexlog import log_message
+from trend_analyzer import TrendAnalyzer
+from business_rules import BusinessRulesEngine
+from risk_assessment import RiskAssessmentEngine
+from scoring import ScoringEngine
+from flexlog import log_message
+from csv_data_processor import CSVDataProcessor
 
 #Pipeline manager for decision-making process
 class ProductEvaluator:
@@ -24,13 +25,13 @@ class ProductEvaluator:
         log_message("[ProductEvaluator] Starting evaluation pipeline", print_log=True, additional_route="evaluator")
         
         #1. Fetch trending products (input)
-        #Pulls list of TrendingProduct objects
-        #Our databases and scraping information
+        #Pulls list of TrendingProduct objects from CSV data
         try:
-            trending_products = self.trend_analyzer.fetch_trending_products()
-            log_message(f"[ProductEvaluator] Fetched {len(trending_products)} trending products", additional_route="evaluator")
+            csv_processor = CSVDataProcessor("trends_data.csv")
+            trending_products = csv_processor.get_unique_products()
+            log_message(f"[ProductEvaluator] Fetched {len(trending_products)} trending products from CSV", additional_route="evaluator")
         except Exception as e:
-            log_message(f"[ProductEvaluator] ERROR fetching trending products: {e}", print_log=True, additional_route="evaluator")
+            log_message(f"[ProductEvaluator] ERROR fetching trending products from CSV: {e}", print_log=True, additional_route="evaluator")
             raise
         
         #2. Evaluate each product (core processing loop)
