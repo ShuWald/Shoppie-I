@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prince of Peace Trending Products Evaluator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .animate-spin {
+            animation: spin 1s linear infinite;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="app">
+        <!-- Loading State -->
+        <div id="loading" class="min-h-screen flex items-center justify-center">
+            <div class="text-center">
+                <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+                <p class="mt-4 text-gray-600">Analyzing trending health & wellness products...</p>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div id="content" class="hidden">
+            <!-- Header -->
+            <header class="bg-white shadow-sm border-b">
+                <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <h1 class="text-2xl font-bold text-gray-900">
+                                Prince of Peace Trending Products Evaluator
+                            </h1>
+                            <p class="text-sm text-gray-600 mt-1">
+                                Smart shopping assistant for business buyers
+                            </p>
+                        </div>
+                        <button 
+                            onclick="fetchTrendingProducts()"
+                            class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                        >
+                            Refresh Analysis
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+                <!-- Summary Insights -->
+                <div id="insights" class="bg-white rounded-lg shadow p-6 mb-8">
+                    <h2 class="text-lg font-semibold text-gray-900 mb-4">Key Insights</h2>
+                    <div id="insights-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+                </div>
+
+                <!-- High Priority Products -->
+                <div id="high-priority" class="mb-8">
+                    <h2 class="text-xl font-semibold text-gray-900 mb-4">
+                        High Priority Opportunities (<span id="high-count">0</span>)
+                    </h2>
+                    <div id="high-products" class="space-y-4"></div>
+                </div>
+
+                <!-- Medium Priority Products -->
+                <div id="medium-priority" class="mb-8">
+                    <h2 class="text-xl font-semibold text-gray-900 mb-4">
+                        Medium Priority Considerations (<span id="medium-count">0</span>)
+                    </h2>
+                    <div id="medium-products" class="space-y-4"></div>
+                </div>
+
+                <!-- Low Priority Products -->
+                <div id="low-priority" class="mb-8">
+                    <h2 class="text-xl font-semibold text-gray-900 mb-4">
+                        Low Priority (<span id="low-count">0</span>)
+                    </h2>
+                    <div id="low-products" class="space-y-4"></div>
+                </div>
+
+                <!-- Report Metadata -->
+                <div class="bg-white rounded-lg shadow p-6 mt-8">
+                    <div class="flex justify-between text-sm text-gray-600">
+                        <span>Total Products Evaluated: <span id="total-count">0</span></span>
+                        <span>Generated: <span id="generated-time">-</span></span>
+                    </div>
+                </div>
+            </main>
+        </div>
+
+        <!-- Error State -->
+        <div id="error" class="hidden min-h-screen flex items-center justify-center">
+            <div class="text-center">
+                <p class="text-red-600 mb-4">Error: <span id="error-message"></span></p>
+                <button 
+                    onclick="fetchTrendingProducts()"
+                    class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+                >
+                    Retry
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let report = null;
+
+        function getScoreColor(score) {
+            if (score >= 80) return 'text-green-600';
+            if (score >= 60) return 'text-yellow-600';
+            return 'text-red-600';
+        }
+
+        function getScoreBgColor(score) {
+            if (score >= 80) return 'bg-green-100';
+            if (score >= 60) return 'bg-yellow-100';
+            return 'bg-red-100';
+        }
+
+        function getRiskColor(risk) {
+            switch (risk) {
+                case 'low': return 'text-green-600';
+                case 'medium': return 'text-yellow-600';
+                case 'high': return 'text-red-600';
+                default: return 'text-gray-600';
+            }
+        }
+
+        function getActionColor(action) {
+            return action === "Distribute existing product" 
+                ? 'text-blue-600 bg-blue-100' 
+                : 'text-purple-600 bg-purple-100';
+        }
+
+        function createProductCard(evaluation) {
+            const { product, pop_relevance_score, risk_assessment, suggested_action, reasoning, confidence_score } = evaluation;
+            
+            return `
+                <div class="bg-white rounded-lg shadow p-6">
+                    <div class="flex justify-between items-start mb-4">
+                        <div class="flex-1">
+                            <h3 class="text-lg font-semibold text-gray-900">${product.name}</h3>
+                            <p class="text-sm text-gray-600 mt-1">${product.description}</p>
+                            <div class="flex flex-wrap gap-2 mt-2">
+                                <span class="px-2 py-1 bg-gray-100 text-xs rounded text-gray-700">
+                                    ${product.category}
+                                </span>
+                                <span class="px-2 py-1 bg-gray-100 text-xs rounded text-gray-700">
+                                    Source: ${product.source}
+                                </span>
+                            </div>
+                        </div>
+                        <div class="text-right ml-4">
+                            <div class="px-3 py-1 rounded-lg ${getScoreBgColor(pop_relevance_score)}">
+                                <span class="text-lg font-bold ${getScoreColor(pop_relevance_score)}">
+                                    ${pop_relevance_score.toFixed(1)}
+                                </span>
+                            </div>
+                            <p class="text-xs text-gray-600 mt-1">PoP Score</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div>
+                            <p class="text-xs text-gray-600">Trend Score</p>
+                            <p class="text-sm font-semibold">${product.trend_score}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-600">Market Growth</p>
+                            <p class="text-sm font-semibold">${product.market_growth_rate}%</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-600">Consumer Interest</p>
+                            <p class="text-sm font-semibold">${product.consumer_interest_score}</p>
+                        </div>
+                        <div>
+                            <p class="text-xs text-gray-600">Confidence</p>
+                            <p class="text-sm font-semibold">${confidence_score.toFixed(0)}%</p>
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <p class="text-xs text-gray-600 mb-2">Risk Assessment</p>
+                        <div class="flex flex-wrap gap-2">
+                            <span class="px-2 py-1 text-xs rounded ${getRiskColor(risk_assessment.tariff_risk)}">
+                                Tariff: ${risk_assessment.tariff_risk}
+                            </span>
+                            <span class="px-2 py-1 text-xs rounded ${getRiskColor(risk_assessment.fda_concern)}">
+                                FDA: ${risk_assessment.fda_concern}
+                            </span>
+                            <span class="px-2 py-1 text-xs rounded ${getRiskColor(risk_assessment.supply_chain_risk)}">
+                                Supply: ${risk_assessment.supply_chain_risk}
+                            </span>
+                            <span class="px-2 py-1 text-xs rounded ${getRiskColor(risk_assessment.competition_risk)}">
+                                Competition: ${risk_assessment.competition_risk}
+                            </span>
+                        </div>
+                        ${risk_assessment.flags.length > 0 ? `
+                            <div class="mt-2">
+                                <p class="text-xs text-gray-600 mb-1">Flags:</p>
+                                <div class="flex flex-wrap gap-1">
+                                    ${risk_assessment.flags.map(flag => 
+                                        `<span class="px-2 py-1 bg-red-100 text-xs rounded text-red-700">${flag}</span>`
+                                    ).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <div class="flex justify-between items-center">
+                        <div class="flex-1">
+                            <span class="px-3 py-1 text-sm rounded-full font-medium ${getActionColor(suggested_action)}">
+                                ${suggested_action}
+                            </span>
+                        </div>
+                        <div class="text-right ml-4">
+                            <p class="text-xs text-gray-600">Reasoning</p>
+                            <p class="text-sm text-gray-700">${reasoning}</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function displayReport(data) {
+            report = data;
+            
+            // Update insights
+            const insightsGrid = document.getElementById('insights-grid');
+            insightsGrid.innerHTML = report.summary_insights.map(insight => `
+                <div class="flex items-start space-x-2">
+                    <div class="w-2 h-2 bg-blue-600 rounded-full mt-2 flex-shrink-0"></div>
+                    <p class="text-sm text-gray-700">${insight}</p>
+                </div>
+            `).join('');
+
+            // Update high priority products
+            const highProducts = document.getElementById('high-products');
+            const highCount = document.getElementById('high-count');
+            highCount.textContent = report.high_priority_products.length;
+            highProducts.innerHTML = report.high_priority_products.map(evaluation => 
+                createProductCard(evaluation)
+            ).join('');
+
+            // Update medium priority products
+            const mediumProducts = document.getElementById('medium-products');
+            const mediumCount = document.getElementById('medium-count');
+            mediumCount.textContent = report.medium_priority_products.length;
+            mediumProducts.innerHTML = report.medium_priority_products.map(evaluation => 
+                createProductCard(evaluation)
+            ).join('');
+
+            // Update low priority products
+            const lowProducts = document.getElementById('low-products');
+            const lowCount = document.getElementById('low-count');
+            lowCount.textContent = report.low_priority_products.length;
+            lowProducts.innerHTML = report.low_priority_products.map(evaluation => 
+                createProductCard(evaluation)
+            ).join('');
+
+            // Update metadata
+            document.getElementById('total-count').textContent = report.total_products_evaluated;
+            document.getElementById('generated-time').textContent = new Date(report.generated_at).toLocaleString();
+
+            // Show content, hide loading
+            document.getElementById('loading').classList.add('hidden');
+            document.getElementById('content').classList.remove('hidden');
+        }
+
+        async function fetchTrendingProducts() {
+            try {
+                document.getElementById('loading').classList.remove('hidden');
+                document.getElementById('content').classList.add('hidden');
+                document.getElementById('error').classList.add('hidden');
+
+                const response = await fetch('http://localhost:8000/api/evaluate-trending-products');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                displayReport(data);
+            } catch (err) {
+                document.getElementById('error-message').textContent = err.message;
+                document.getElementById('loading').classList.add('hidden');
+                document.getElementById('error').classList.remove('hidden');
+            }
+        }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', fetchTrendingProducts);
+    </script>
+</body>
+</html>
