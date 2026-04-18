@@ -29,6 +29,7 @@ Backend -
     \- Python required
     \- Navigage to backend folder
     \- Create virtual environment `python -m venv venv`
+    \- Bypass Error `Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`
     \- Activate your virtual environment `venv/Scripts/activate`
     \- Install packages from `requirements.txt` using `pip install -r requirements.txt`
     \- `uvicorn app.main:app --reload --port 8000` to run backend
