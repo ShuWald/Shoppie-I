@@ -87,20 +87,17 @@ class ProductEvaluator:
         
         try:
             step = "business_rules.evaluate_product"
-            log_message(f"[ProductEvaluator] [{product.name}] START {step}", additional_route="evaluator")
             # Business rules evaluation
             business_rules = self.business_rules.evaluate_product(product)
             log_message(f"[ProductEvaluator] [{product.name}] DONE {step}", additional_route="evaluator")
             
             step = "risk_assessor.assess_risks"
-            log_message(f"[ProductEvaluator] [{product.name}] START {step}", additional_route="evaluator")
             # Risk assessment
             risk_assessment = self.risk_assessor.assess_risks(product)
             log_message(f"[ProductEvaluator] [{product.name}] DONE {step}", additional_route="evaluator")
             log_message(f"[ProductEvaluator] {product.name} - tariff_risk:{risk_assessment.tariff_risk.value}, fda:{risk_assessment.fda_concern.value}, flags:{len(risk_assessment.flags)}", additional_route="evaluator")
             
             step = "scoring_engine.calculate_pop_relevance_score"
-            log_message(f"[ProductEvaluator] [{product.name}] START {step}", additional_route="evaluator")
             # Calculate PoP relevance score
             pop_score = self.scoring_engine.calculate_pop_relevance_score(
                 product, business_rules, risk_assessment
@@ -108,13 +105,11 @@ class ProductEvaluator:
             log_message(f"[ProductEvaluator] [{product.name}] DONE {step} -> score:{pop_score:.1f}", additional_route="evaluator")
             
             step = "business_rules.suggest_action"
-            log_message(f"[ProductEvaluator] [{product.name}] START {step}", additional_route="evaluator")
             # Suggest action
             suggested_action = self.business_rules.suggest_action(product, business_rules)
             log_message(f"[ProductEvaluator] [{product.name}] DONE {step} -> action:{suggested_action.value}", additional_route="evaluator")
             
             step = "scoring_engine.generate_reasoning"
-            log_message(f"[ProductEvaluator] [{product.name}] START {step}", additional_route="evaluator")
             # Generate reasoning
             reasoning = self.scoring_engine.generate_reasoning(
                 product, business_rules, risk_assessment, pop_score
@@ -122,7 +117,6 @@ class ProductEvaluator:
             log_message(f"[ProductEvaluator] [{product.name}] DONE {step}", additional_route="evaluator")
             
             step = "scoring_engine.calculate_confidence_score"
-            log_message(f"[ProductEvaluator] [{product.name}] START {step}", additional_route="evaluator")
             # Calculate confidence
             confidence = self.scoring_engine.calculate_confidence_score(
                 product, business_rules, risk_assessment
@@ -130,7 +124,6 @@ class ProductEvaluator:
             log_message(f"[ProductEvaluator] [{product.name}] DONE {step} -> confidence:{confidence:.1f}", additional_route="evaluator")
             
             step = "ProductEvaluation(...)"
-            log_message(f"[ProductEvaluator] [{product.name}] START {step}", additional_route="evaluator")
             return ProductEvaluation(
                 product=product,
                 pop_relevance_score=pop_score,

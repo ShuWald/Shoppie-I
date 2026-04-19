@@ -16,7 +16,6 @@ class RiskAssessmentEngine:
     # Returns a RiskAssessment based on assessed risk in all categories 
     def assess_risks(self, product: TrendingProduct) -> RiskAssessment:
         """Assess various risks associated with the product"""
-        log_message(f"[RiskAssessment] START assess_risks: {product.name}", additional_route="risk_assessment")
         
         tariff_risk = self._assess_tariff_risk(product)
         fda_concern = self._assess_fda_concern(product)

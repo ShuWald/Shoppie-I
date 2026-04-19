@@ -11,7 +11,6 @@ from .flexlog import log_message
 
 def get_fda_substances():
     substances = []
-    log_message("[filter] START get_fda_substances", additional_route="filter")
     
     # Get approved food substances from FDA web interface
     url = "https://www.hfpappexternal.fda.gov/scripts/fdcc/index.cfm?set=FoodSubstances"
