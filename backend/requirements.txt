@@ -1,4 +1,10 @@
 fastapi>=0.115,<1.0
 uvicorn[standard]>=0.30,<1.0
 pydantic>=2.0,<3.0
+pandas
+pytrends
+lxml
+openpyxl
+openai # if using it in filter.py
+beautifulsoup4
 requests>=2.31,<3.0
