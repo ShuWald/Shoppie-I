@@ -17,7 +17,7 @@ class CSVDataProcessor:
         """Load and preprocess CSV data"""
         try:
             self.df = pd.read_csv(self.csv_path)
-            print(f"Loaded {len(self.df)} rows from {self.csv_path}")
+            print(f"Loaded {len(selff.df)} rows from {self.csv_path}")
             return self.df
         except Exception as e:
             print(f"Error loading CSV: {e}")
