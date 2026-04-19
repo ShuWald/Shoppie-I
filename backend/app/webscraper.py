@@ -423,8 +423,13 @@ class GoogleTrendsScraper:
         ])
 
         if os.path.exists(output_path):
-            existing_df = pd.read_csv(output_path)
-            out_df = pd.concat([existing_df, out_df]).drop_duplicates()
+            try:
+                existing_df = pd.read_csv(output_path)
+                if not existing_df.empty:
+                    out_df = pd.concat([existing_df, out_df]).drop_duplicates()
+            except pd.errors.EmptyDataError:
+                # File exists but is empty, continue with new data
+                pass
 
         out_df.to_csv(output_path, index=False, encoding="utf-8-sig")
         log.info(f"✓ CSV export complete → {output_path}  ({len(out_df):,} rows)")
@@ -484,6 +489,127 @@ class GoogleTrendsScraper:
 
         log.info(f"✓ Export complete → {output_path}")
 
+    def check_existing_data(self, csv_path: str) -> dict:
+        """Check existing CSV data to determine what needs updating"""
+        if not os.path.exists(csv_path):
+            return {
+                'exists': False,
+                'latest_date': None,
+                'existing_keywords': set(),
+                'existing_sections': set()
+            }
+        
+        try:
+            existing_df = pd.read_csv(csv_path)
+            if existing_df.empty:
+                return {
+                    'exists': False,
+                    'latest_date': None,
+                    'existing_keywords': set(),
+                    'existing_sections': set()
+                }
+            
+            # Get latest date from interest_over_time section
+            latest_date = None
+            if 'date' in existing_df.columns and 'section' in existing_df.columns:
+                iot_data = existing_df[existing_df['section'] == 'interest_over_time']
+                if not iot_data.empty and 'date' in iot_data.columns:
+                    dates = pd.to_datetime(iot_data['date'], errors='coerce')
+                    dates = dates.dropna()
+                    if not dates.empty:
+                        latest_date = dates.max().date()
+            
+            return {
+                'exists': True,
+                'latest_date': latest_date,
+                'existing_keywords': set(existing_df['keyword'].dropna().unique()),
+                'existing_sections': set(existing_df['section'].dropna().unique())
+            }
+        except Exception as e:
+            log.warning(f"Error checking existing data: {e}")
+            return {
+                'exists': False,
+                'latest_date': None,
+                'existing_keywords': set(),
+                'existing_sections': set()
+            }
+
+    def run_update(self, output_path: str, csv_only: bool = False) -> None:
+        """Run update mode - only scrape new data"""
+        log.info("=" * 60)
+        log.info("Running UPDATE mode - checking existing data...")
+        log.info("=" * 60)
+        
+        csv_path = output_path.replace(".xlsx", ".csv") if output_path.endswith(".xlsx") else output_path
+        if not csv_path.endswith(".csv"):
+            csv_path += ".csv"
+        
+        existing_data = self.check_existing_data(csv_path)
+        
+        if not existing_data['exists']:
+            log.info("No existing data found, running full scrape...")
+            self.run(output_path, csv_only)
+            return
+        
+        log.info(f"Found existing data with {len(existing_data['existing_keywords'])} keywords")
+        log.info(f"Latest date: {existing_data['latest_date']}")
+        
+        # For update mode, we'll focus on:
+        # 1. Recent trending searches (always fresh)
+        # 2. New suggestions
+        # 3. Updated interest data if timeframe is recent
+        
+        collected = {}
+        
+        # Always get fresh trending searches
+        collected["trending_page"] = self.scrape_trending_page()
+        
+        # Get suggestions (these change frequently)
+        collected["suggestions"] = self.get_suggestions()
+        
+        # Only get interest data if we don't have recent data or timeframe is very recent
+        if existing_data['latest_date'] is None or \
+           (datetime.now().date() - existing_data['latest_date']).days > 7:
+            log.info("Getting updated interest data (data is more than 7 days old)...")
+            collected["interest_over_time"] = self.get_interest_over_time()
+            collected["interest_by_region"] = self.get_interest_by_region()
+        else:
+            log.info("Skipping interest data (recent data exists)")
+            collected["interest_over_time"] = pd.DataFrame()
+            collected["interest_by_region"] = pd.DataFrame()
+        
+        # Get related queries for high-priority keywords only
+        if existing_data['existing_keywords']:
+            # Focus on top keywords that might have new related queries
+            priority_keywords = list(existing_data['existing_keywords'])[:10]  # Limit to avoid rate limiting
+            collected["related_queries"] = {}
+            for keyword in priority_keywords:
+                log.info(f"  → Getting related queries for '{keyword}'")
+                self._build_payload([keyword])
+                data = self._safe_fetch("related_queries")
+                if data and keyword in data:
+                    collected["related_queries"][keyword] = {
+                        "top": data[keyword].get("top"),
+                        "rising": data[keyword].get("rising"),
+                    }
+        else:
+            collected["related_queries"] = {}
+        
+        # Skip related topics for update mode (less critical)
+        collected["related_topics"] = {}
+        
+        # Export updated data
+        self.export_to_csv(csv_path, collected)
+        
+        # Also write Excel unless --csv-only flag is set
+        if not csv_only:
+            xlsx_path = output_path if output_path.endswith(".xlsx") else output_path.replace(".csv", ".xlsx")
+            self.export_to_excel(xlsx_path, collected)
+        
+        log.info("=" * 60)
+        log.info("Update complete.")
+        log.info("=" * 60)
+
     # ── Main orchestrator ─────────────────────────────────────────────────────
 
     def run(self, output_path: str, csv_only: bool = False) -> None:
@@ -501,19 +627,13 @@ class GoogleTrendsScraper:
         collected["suggestions"]        = self.get_suggestions()
         collected["trending_page"]      = self.scrape_trending_page()
 
-<<<<<<< HEAD
-=======
         # Always write CSV
->>>>>>> 65058cacd440b50174dfac8e06cec3ee80be4dbc
         csv_path = output_path.replace(".xlsx", ".csv") if output_path.endswith(".xlsx") else output_path
         if not csv_path.endswith(".csv"):
             csv_path += ".csv"
         self.export_to_csv(csv_path, collected)
 
-<<<<<<< HEAD
-=======
         # Also write Excel unless --csv-only flag is set
->>>>>>> 65058cacd440b50174dfac8e06cec3ee80be4dbc
         if not csv_only:
             xlsx_path = output_path if output_path.endswith(".xlsx") else output_path.replace(".csv", ".xlsx")
             self.export_to_excel(xlsx_path, collected)
@@ -522,7 +642,6 @@ class GoogleTrendsScraper:
         log.info("Scrape complete.")
         log.info("=" * 60)
 
-<<<<<<< HEAD
     def get_trending_products_for_evaluator(self, csv_path: str = "trends_data.csv") -> list:
         """Get TrendingProduct objects for evaluator integration"""
         from csv_data_processor import CSVDataProcessor
@@ -535,8 +654,6 @@ class GoogleTrendsScraper:
         except Exception as e:
             log.error(f"Error getting products for evaluator: {e}")
             return []
-=======
->>>>>>> 65058cacd440b50174dfac8e06cec3ee80be4dbc
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
 
@@ -574,6 +691,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Export only CSV (skip Excel workbook)",
     )
+    parser.add_argument(
+        "--update",
+        action="store_true",
+        help="Update existing CSV with new data only (skip full scrape)",
+    )
     return parser.parse_args()
 
 
@@ -584,4 +706,8 @@ if __name__ == "__main__":
         timeframe=args.timeframe,
         delay=args.delay,
     )
-    scraper.run(output_path=args.output, csv_only=args.csv_only)
+    
+    if args.update:
+        scraper.run_update(output_path=args.output, csv_only=args.csv_only)
+    else:
+        scraper.run(output_path=args.output, csv_only=args.csv_only)

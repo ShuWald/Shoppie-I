@@ -51,14 +51,30 @@ class CSVDataProcessor:
         # Default to herbal supplement for unknown categories
         return ProductCategory.HERBAL_SUPPLEMENT
     
-    def calculate_trend_score(self, interest_score: float, section: str) -> float:
+    def calculate_trend_score(self, interest_score, section: str) -> float:
         """Calculate trend score from interest score and section"""
         if pd.isna(interest_score) or interest_score == 0:
             return 10.0  # Default low score for no data
         
-        # Normalize interest score to 0-100 scale
-        # Google Trends interest is typically 0-100, but we'll cap and normalize
-        normalized_score = min(float(interest_score), 100.0)
+        # Handle non-numeric interest scores (like "High", "Medium", etc.)
+        try:
+            # Normalize interest score to 0-100 scale
+            # Google Trends interest is typically 0-100, but we'll cap and normalize
+            normalized_score = min(float(interest_score), 100.0)
+        except (ValueError, TypeError):
+            # Handle string descriptions
+            if isinstance(interest_score, str):
+                score_str = str(interest_score).lower()
+                if 'high' in score_str:
+                    normalized_score = 80.0
+                elif 'medium' in score_str or 'moderate' in score_str:
+                    normalized_score = 50.0
+                elif 'low' in score_str:
+                    normalized_score = 20.0
+                else:
+                    normalized_score = 40.0  # Default for unknown strings
+            else:
+                normalized_score = 40.0
         
         # Boost score for certain sections
         if section == 'interest_over_time':
