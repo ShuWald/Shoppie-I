@@ -6,11 +6,12 @@ from .filter import (
     check_tariffs_endpoint,
 )
 from typing import Annotated
+import json
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
 from .evaluator import ProductEvaluator
-from .models import TrendingReport
+from .models import TrendingReport, ProductCategory
 
 #NOTES AT BOTTOM OF FILE
 
@@ -48,7 +49,7 @@ async def root():
     return {"message": "Prince of Peace Trending Products Evaluator API"}
 
 #Main Endpoint (trend report, formatting, error handling)
-@app.get("/api/evaluate-trending-products", response_model=TrendingReport)
+@app.get("/api/evaluate-trending-products")
 async def evaluate_trending_products():
     """
     Evaluate trending health/wellness products for Prince of Peace
@@ -56,7 +57,14 @@ async def evaluate_trending_products():
     """
     try:
         report = evaluator.evaluate_trending_products()
-        return report
+        # Convert to dict and handle enum serialization
+        report_dict = report.model_dump()
+        # Convert ProductCategory enum values to their string values
+        for product_list in [report_dict['high_priority_products'], report_dict['medium_priority_products'], report_dict['low_priority_products']]:
+            for product in product_list:
+                if 'product' in product and 'category' in product['product']:
+                    product['product']['category'] = product['product']['category'].value
+        return JSONResponse(content=report_dict)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Evaluation failed: {str(e)}")
 

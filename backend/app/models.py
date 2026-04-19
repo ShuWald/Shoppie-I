@@ -8,13 +8,13 @@ Define values for controlled categories
 --------------------------------
 '''
 class ProductCategory(str, Enum):
-    GINGER = "ginger"
-    TEA = "tea"
-    GINSENG = "ginseng"
-    HERBAL_SUPPLEMENT = "herbal_supplement"
-    PAIN_RELIEF = "pain_relief"
-    HONEY = "honey"
-    ORGANIC_FOOD = "organic_food"
+    GINGER = "Ginger"
+    TEA = "Tea"
+    GINSENG = "Ginseng"
+    HERBAL_SUPPLEMENT = "Herbal Supplement"
+    PAIN_RELIEF = "Pain Relief"
+    HONEY = "Honey"
+    ORGANIC_FOOD = "Organic Food"
 
 class RiskLevel(str, Enum):
     LOW = "low"

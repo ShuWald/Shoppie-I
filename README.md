@@ -20,6 +20,7 @@ Frontend -
     \- Node is required, check `node --version`
     \- npm is required, `npm install` after installing node
     \- Navigate to `shopie-i`
+    \- Chart.js required, run `npm install chart.js`
     \- `npm run dev` to run frontend
         \- Navigate to link in terminal to see site, local to access on your machine, network to access from another's
         - Local:         http://localhost:3000
