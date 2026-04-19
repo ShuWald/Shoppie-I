@@ -1,9 +1,17 @@
+from typing import List
+from .filter import (
+    get_fda_substances_endpoint,
+    check_restricted_ingredients,
+    estimate_shelf_life_endpoint,
+    check_tariffs_endpoint,
+)
 from typing import Annotated
+import json
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from fastapi.responses import JSONResponse
 from .evaluator import ProductEvaluator
-from .models import TrendingReport
+from .models import TrendingReport, ProductCategory
 
 #NOTES AT BOTTOM OF FILE
 
@@ -41,7 +49,7 @@ async def root():
     return {"message": "Prince of Peace Trending Products Evaluator API"}
 
 #Main Endpoint (trend report, formatting, error handling)
-@app.get("/api/evaluate-trending-products", response_model=TrendingReport)
+@app.get("/api/evaluate-trending-products")
 async def evaluate_trending_products():
     """
     Evaluate trending health/wellness products for Prince of Peace
@@ -49,7 +57,14 @@ async def evaluate_trending_products():
     """
     try:
         report = evaluator.evaluate_trending_products()
-        return report
+        # Convert to dict and handle enum serialization
+        report_dict = report.model_dump()
+        # Convert ProductCategory enum values to their string values
+        for product_list in [report_dict['high_priority_products'], report_dict['medium_priority_products'], report_dict['low_priority_products']]:
+            for product in product_list:
+                if 'product' in product and 'category' in product['product']:
+                    product['product']['category'] = product['product']['category'].value
+        return JSONResponse(content=report_dict)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Evaluation failed: {str(e)}")
 
@@ -59,6 +74,27 @@ async def evaluate_trending_products():
 async def health_check():
     """Health check endpoint"""
     return {"status": "healthy", "service": "PoP Trending Products Evaluator"}
+
+
+# Filter endpoints
+@app.get("/api/fda-substances")
+async def fda_substances():
+    return get_fda_substances_endpoint()
+
+
+@app.post("/api/check-restricted")
+async def check_restricted(ingredients: List[str]):
+    return check_restricted_ingredients(ingredients)
+
+
+@app.post("/api/estimate-shelf-life")
+async def estimate_shelf_life(ingredients: List[str]):
+    return estimate_shelf_life_endpoint(ingredients)
+
+
+@app.post("/api/check-tariffs")
+async def check_tariffs(country: str, threshold: float = 15.0):
+    return check_tariffs_endpoint(country, threshold)
 
 
 '''
