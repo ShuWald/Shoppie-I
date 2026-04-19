@@ -15,13 +15,38 @@ def get_fda_substances():
     
     # Get approved food substances from FDA web interface
     url = "https://www.hfpappexternal.fda.gov/scripts/fdcc/index.cfm?set=FoodSubstances"
-    response = requests.get(url)
-    if response.status_code == 200:
-        # NOTE: Disabled HTML table parsing for now.
-        # pd.read_html(response.text) has been producing FileNotFoundError with huge HTML payloads in this environment.
-        # Re-enable once we have a stable parser path for this endpoint.
-        print("[filter] FDA table parsing temporarily disabled; using other data sources for now.")
-        log_message("[filter] FDA table parsing temporarily disabled", additional_route="filter")
+    try:
+        response = requests.get(url, timeout=30)
+        if response.status_code == 200:
+            # Parse HTML using BeautifulSoup instead of pd.read_html
+            soup = BeautifulSoup(response.text, 'html.parser')
+            
+            # Find all tables in the HTML
+            tables = soup.find_all('table')
+            
+            for table in tables:
+                # Extract table rows
+                rows = table.find_all('tr')
+                
+                for row in rows[1:]:  # Skip header row
+                    cells = row.find_all(['td', 'th'])
+                    if len(cells) >= 2:
+                        # Extract substance name from first cell
+                        substance_text = cells[0].get_text(strip=True)
+                        if substance_text and len(substance_text) > 2:
+                            substances.append(substance_text)
+                            
+                            # Also check second cell for additional substance info
+                            if len(cells) > 1:
+                                additional_text = cells[1].get_text(strip=True)
+                                if additional_text and len(additional_text) > 2:
+                                    substances.append(additional_text)
+            
+            log_message(f"[filter] FDA table parsing successful: found {len(substances)} substances", additional_route="filter")
+        else:
+            log_message(f"[filter] FDA request failed with status {response.status_code}", additional_route="filter")
+    except Exception as e:
+        log_message(f"[filter] FDA table parsing failed: {str(e)}", additional_route="filter")
     
     # Get banned/restricted peptides from openFDA enforcement API
     enforcement_url = "https://api.fda.gov/food/enforcement.json?search=peptide&limit=1000"
@@ -43,22 +68,35 @@ def get_fda_substances():
     # Get category 5 (unsafe) dietary supplement ingredients from FDA
     dietary_supplements_url = "https://www.fda.gov/food/dietary-supplements/information-select-dietary-supplement-ingredients-and-other-substances"
     try:
-        ds_response = requests.get(dietary_supplements_url)
+        ds_response = requests.get(dietary_supplements_url, timeout=30)
         if ds_response.status_code == 200:
             # Parse the HTML content to find category 5 substances
             soup = BeautifulSoup(ds_response.text, 'html.parser')
             
-            # Look for tables or sections containing category information
-            # Category 5 substances are typically marked as "unsafe" or "category V"
-            category_5_indicators = [
-                "category v", "category 5", "unsafe", "probably unsafe", 
-                "known to be unsafe", "unsafe under certain conditions"
-            ]
+            # Look for tables containing category information
+            tables = soup.find_all('table')
             
-            # Find all text content and search for category 5 substances
-            page_text = soup.get_text().lower()
+            for table in tables:
+                rows = table.find_all('tr')
+                for row in rows:
+                    cells = row.find_all(['td', 'th'])
+                    if len(cells) >= 2:
+                        # Check if any cell contains category 5 indicators
+                        row_text = ' '.join([cell.get_text().lower() for cell in cells])
+                        
+                        category_5_indicators = [
+                            "category v", "category 5", "unsafe", "probably unsafe", 
+                            "known to be unsafe", "unsafe under certain conditions"
+                        ]
+                        
+                        if any(indicator in row_text for indicator in category_5_indicators):
+                            # Extract substance names from this row
+                            for cell in cells:
+                                cell_text = cell.get_text(strip=True)
+                                if cell_text and len(cell_text) > 2 and not any(indicator in cell_text.lower() for indicator in category_5_indicators):
+                                    substances.append(f"UNSAFE: {cell_text}")
             
-            # Common category 5 substances from FDA lists
+            # Common category 5 substances from FDA lists (as fallback)
             known_category_5 = [
                 "aristolochic acid", "aristolochia", "comfrey", "symmetrical dimethylhydrazine",
                 "dimethylhydrazine", "ephedra", "ephedrine", "ma huang", "kava", "kava kava",
@@ -81,39 +119,29 @@ def get_fda_substances():
                 "dimethylnitrosamine", "ndma", "n-nitrosodiethylamine", "diethylnitrosamine",
                 "n-nitrosodibutylamine", "dibutylnitrosamine", "n-nitrosopiperidine", "n-nitrosopyrrolidine",
                 "n-nitrosomorpholine", "n-nitrosodiphenylamine", "n-nitrosodibenzylamine",
-                "n-nitrosodiphenylamine", "n-nitrosodibenzylamine", "strychnine", "strychnos nux-vomica",
-                "nux vomica", "brucine", "gelsemium", "gelsemium sempervirens", "yellow jasmine",
-                "carolina jasmine", "gelsemine", "gelseminine", "aconite", "aconitum", "monkshood",
-                "wolfsbane", "aconitine", "veratrum", "veratrum viride", "american hellebore",
-                "white hellebore", "veratrine", "protoveratrine", "germitrine", "zygadenine",
-                "penitrem a", "penitrem b", "penitrem c", "penitrem d", "penitrem e", "penitrem f",
-                "roquefortine", "ergotamine", "ergotaminine", "ergocristine", "ergocristinine",
-                "ergocryptine", "ergocryptinine", "ergocornine", "ergocorninine", "ergot", "ergot alkaloids",
-                "claviceps purpurea", "spurred rye", "ergotism", "st. anthony's fire", "ignatius bean",
-                "strychnos ignatii", "ignatia", "brucine", "gelsemium", "gelsemium sempervirens",
-                "yellow jasmine", "carolina jasmine", "gelsemine", "gelseminine", "aconite", "aconitum",
-                "monkshood", "wolfsbane", "aconitine", "veratrum", "veratrum viride", "american hellebore",
-                "white hellebore", "veratrine", "protoveratrine", "germitrine", "zygadenine", "penitrem a",
-                "penitrem b", "penitrem c", "penitrem d", "penitrem e", "penitrem f", "roquefortine",
-                "ergotamine", "ergotaminine", "ergocristine", "ergocristinine", "ergocryptine",
-                "ergocryptinine", "ergocornine", "ergocorninine", "ergot", "ergot alkaloids",
-                "claviceps purpurea", "spurred rye", "ergotism", "st. anthony's fire", "ignatius bean",
-                "strychnos ignatii", "ignatia"
+                "strychnine", "strychnos nux-vomica", "nux vomica", "brucine",
+                "gelsemium", "gelsemium sempervirens", "yellow jasmine", "carolina jasmine",
+                "gelsemine", "gelseminine", "aconite", "aconitum", "monkshood", "wolfsbane",
+                "aconitine", "veratrum", "veratrum viride", "american hellebore", "white hellebore",
+                "veratrine", "protoveratrine", "germitrine", "zygadenine", "penitrem a", "penitrem b",
+                "penitrem c", "penitrem d", "penitrem e", "penitrem f", "roquefortine", "ergotamine",
+                "ergotaminine", "ergocristine", "ergocristinine", "ergocryptine", "ergocryptinine",
+                "ergocornine", "ergocorninine", "ergot", "ergot alkaloids", "claviceps purpurea",
+                "spurred rye", "ergotism", "st. anthony's fire", "ignatius bean", "strychnos ignatii",
+                "ignatia"
             ]
             
-            # Add known category 5 substances
-            substances.extend(known_category_5)
-            
-            # Try to extract substances mentioned near category indicators
-            for indicator in category_5_indicators:
-                if indicator in page_text:
-                    # Find text around category indicators and extract substance names
-                    # This is a simplified approach - in practice, you'd need more sophisticated parsing
-                    pass
+            # Add known category 5 substances as fallback
+            for substance in known_category_5:
+                substances.append(f"UNSAFE: {substance}")
+                
+            log_message(f"[filter] Dietary supplements parsing completed", additional_route="filter")
+        else:
+            log_message(f"[filter] Dietary supplements request failed with status {ds_response.status_code}", additional_route="filter")
                     
     except Exception as e:
-        # If scraping fails, continue with known substances
-        pass
+        log_message(f"[filter] Dietary supplements parsing failed: {str(e)}", additional_route="filter")
+        # If scraping fails, continue with other data sources
     
     unique_substances = list(set(substances))
     log_message(f"[filter] DONE get_fda_substances: {len(unique_substances)} substances", additional_route="filter")
