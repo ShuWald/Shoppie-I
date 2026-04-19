@@ -43,38 +43,9 @@ class RiskAssessmentEngine:
 
     def _assess_tariff_risk(self, product: TrendingProduct) -> RiskLevel:
         """Assess tariff risk based on product category and likely sourcing"""
-        # Try to infer country from product data
-        text_to_check = f"{product.name} {product.description} {' '.join(product.trend_keywords)}".lower()
-        
-        # Common sourcing countries for these products
-        country_mapping = {
-            "china": "china",
-            "indian": "india", 
-            "vietnam": "vietnam",
-            "thailand": "thailand",
-            "japan": "japan",
-            "korea": "south korea"
-        }
-        
-        inferred_country = None
-        for keyword, country in country_mapping.items():
-            if keyword in text_to_check:
-                inferred_country = country
-                break
-        
-        # If we can infer a country, use filter.py's check_tariff_rates API
-        if inferred_country:
-            try:
-                acceptable = check_tariff_api(inferred_country)
-                return RiskLevel.LOW if acceptable else RiskLevel.HIGH
-            except Exception as e:
-                print(f"[RiskAssessment DEBUG] check_tariff_rates failed for '{inferred_country}': {e}")
-                # Fall back to category-based assessment if API fails
-                pass
-        
-        # Default category-based assessment (keep the hardcoded logic)
-        high_risk_categories = ["herbal_supplement", "tea"]
-        if product.category.value in high_risk_categories:
+        # Higher risk for products likely sourced from high-tariff countries
+        high_risk_categories = ["Herbal Supplement", "tea"]
+        if product.category in high_risk_categories:
             return RiskLevel.MEDIUM
         
         return RiskLevel.LOW

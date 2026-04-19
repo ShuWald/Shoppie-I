@@ -56,7 +56,7 @@ class TrendAnalyzer:
         return [
             {
                 "name": "Adaptogenic Mushroom Coffee",
-                "category": "herbal_supplement",
+                "category": "Herbal Supplement",
                 "description": "Coffee infused with functional mushrooms like lion's mane and reishi for stress relief and focus",
                 "trend_score": 87,
                 "market_growth_rate": 45,
@@ -66,7 +66,7 @@ class TrendAnalyzer:
             },
             {
                 "name": "Organic Ginger Turmeric Elixir",
-                "category": "ginger",
+                "category": "Ginger",
                 "description": "Concentrated liquid supplement combining organic ginger and turmeric for anti-inflammatory benefits",
                 "trend_score": 79,
                 "market_growth_rate": 38,
@@ -76,7 +76,7 @@ class TrendAnalyzer:
             },
             {
                 "name": "CBD-Infused Herbal Tea",
-                "category": "tea",
+                "category": "Tea",
                 "description": "Relaxing tea blends with CBD for anxiety relief and better sleep",
                 "trend_score": 72,
                 "market_growth_rate": 42,
@@ -86,7 +86,7 @@ class TrendAnalyzer:
             },
             {
                 "name": "Fermented Ginseng Shots",
-                "category": "ginseng",
+                "category": "Ginseng",
                 "description": "Ready-to-drink fermented ginseng shots for energy and immune support",
                 "trend_score": 68,
                 "market_growth_rate": 35,
@@ -96,7 +96,7 @@ class TrendAnalyzer:
             },
             {
                 "name": "Medicinal Mushroom Complex",
-                "category": "herbal_supplement",
+                "category": "Herbal Supplement",
                 "description": "Multi-mushroom supplement featuring reishi, chaga, cordyceps for overall wellness",
                 "trend_score": 75,
                 "market_growth_rate": 48,
@@ -106,7 +106,7 @@ class TrendAnalyzer:
             },
             {
                 "name": "Organic Honey Loquat Syrup",
-                "category": "honey",
+                "category": "Honey",
                 "description": "Traditional honey-based cough and throat relief syrup with loquat extract",
                 "trend_score": 65,
                 "market_growth_rate": 28,
@@ -116,7 +116,7 @@ class TrendAnalyzer:
             },
             {
                 "name": "Herbal Pain Relief Patches",
-                "category": "pain_relief",
+                "category": "Pain Relief",
                 "description": "Topical patches with natural herbs for muscle and joint pain relief",
                 "trend_score": 70,
                 "market_growth_rate": 33,
@@ -126,7 +126,7 @@ class TrendAnalyzer:
             },
             {
                 "name": "Matcha Ginger Energy Drinks",
-                "category": "ginger",
+                "category": "Ginger",
                 "description": "Natural energy drinks combining matcha green tea and ginger for sustained energy",
                 "trend_score": 73,
                 "market_growth_rate": 41,
