@@ -9,6 +9,7 @@ from .business_rules import BusinessRulesEngine
 from .risk_assessment import RiskAssessmentEngine
 from .scoring import ScoringEngine
 from .flexlog import log_message
+from .evaluation_cache import EvaluationCache
 from math import ceil
 
 #Pipeline manager for decision-making process
@@ -18,6 +19,7 @@ class ProductEvaluator:
         self.business_rules = BusinessRulesEngine() #checks company fit
         self.risk_assessor = RiskAssessmentEngine() #assesses risk
         self.scoring_engine = ScoringEngine() #assigns scores + reasoning
+        self.evaluation_cache = EvaluationCache(max_items=100)
     
     #Main Pipeline (end-to-end workflow)
     def evaluate_trending_products(self, page: int = 1, page_size: int = 10) -> TrendingReport:
@@ -38,19 +40,12 @@ class ProductEvaluator:
             log_message("[ProductEvaluator] ERROR fetching trending products", print_log=True, additional_route="evaluator")
             log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
             raise
-        
-        #2. Evaluate each product (core processing loop)
-        #Loops through every product and runs full evaluation
-        evaluations = []
-        for idx, product in enumerate(trending_products, 1):
-            try:
-                evaluation = self._evaluate_single_product(product)
-                evaluations.append(evaluation)
-                log_message(f"[ProductEvaluator] Evaluated product {idx}/{len(trending_products)}: {product.name} (score: {evaluation.pop_relevance_score:.1f})", additional_route="evaluator")
-            except Exception as e:
-                log_message(f"[ProductEvaluator] ERROR evaluating product '{product.name}'", print_log=True, additional_route="evaluator")
-                log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
-                continue
+
+        evaluations = self._evaluate_request_with_cache(
+            products=trending_products,
+            page=page,
+            page_size=page_size,
+        )
         
         report = self._build_report(
             evaluations=evaluations,
@@ -84,31 +79,84 @@ class ProductEvaluator:
             return
 
         total_in_page = len(trending_products)
+        safe_page = max(1, page)
+        safe_page_size = max(1, page_size)
+        request_start = (safe_page - 1) * safe_page_size
+
+        cached_hits, missing_indices = self.evaluation_cache.resolve_request(request_start, total_in_page)
+
+        hit_rate = (len(cached_hits) / total_in_page * 100) if total_in_page > 0 else 0
+        log_message(
+            f"[ProductEvaluator] STREAM_CACHE_RESOLVE: page={safe_page}, page_size={safe_page_size}, range=[{request_start}..{request_start + total_in_page - 1}], "
+            f"total={total_in_page}, hits={len(cached_hits)}, misses={len(missing_indices)}, hit_rate={hit_rate:.1f}%",
+            additional_route="eval_cache_verbose",
+        )
+
         yield {
             "type": "meta",
-            "page": max(1, page),
-            "page_size": max(1, page_size),
+            "page": safe_page,
+            "page_size": safe_page_size,
             "total_products_available": total_available,
             "total_products_to_evaluate": total_in_page,
             "total_pages": ceil(total_available / max(1, page_size)) if total_available else 0,
+            "cache_hits": len(cached_hits),
+            "cache_misses": len(missing_indices),
         }
 
         evaluations: List[ProductEvaluation] = []
+        resolved_items: Dict[int, ProductEvaluation] = {}
+        stream_from_cache_count = 0
+        stream_fresh_eval_count = 0
+        
         for idx, product in enumerate(trending_products, 1):
-            try:
-                evaluation = self._evaluate_single_product(product)
-                evaluations.append(evaluation)
-                priority = self._priority_for_score(evaluation.pop_relevance_score)
+            global_index = request_start + (idx - 1)
+            if global_index in cached_hits:
+                cached_evaluation = cached_hits[global_index]
+                evaluations.append(cached_evaluation)
+                resolved_items[global_index] = cached_evaluation
+                stream_from_cache_count += 1
+                
+                log_message(
+                    f"[ProductEvaluator] STREAM_CACHED_ITEM: item={idx}/{total_in_page}, global_idx={global_index}, {product.name}",
+                    additional_route="eval_cache_verbose",
+                )
+                
                 yield {
                     "type": "item",
                     "index": idx,
                     "total": total_in_page,
-                    "priority": priority,
+                    "priority": self._priority_for_score(cached_evaluation.pop_relevance_score),
+                    "from_cache": True,
+                    "evaluation": cached_evaluation.model_dump(mode="json"),
+                }
+                continue
+
+            try:
+                evaluation = self._evaluate_single_product(product)
+                evaluations.append(evaluation)
+                resolved_items[global_index] = evaluation
+                stream_fresh_eval_count += 1
+                
+                log_message(
+                    f"[ProductEvaluator] STREAM_FRESH_EVAL: item={idx}/{total_in_page}, global_idx={global_index}, {product.name} (score={evaluation.pop_relevance_score:.1f})",
+                    additional_route="eval_cache_verbose",
+                )
+                
+                yield {
+                    "type": "item",
+                    "index": idx,
+                    "total": total_in_page,
+                    "priority": self._priority_for_score(evaluation.pop_relevance_score),
+                    "from_cache": False,
                     "evaluation": evaluation.model_dump(mode="json"),
                 }
             except Exception as e:
                 log_message(f"[ProductEvaluator] ERROR streaming product '{product.name}'", print_log=True, additional_route="evaluator")
                 log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
+                log_message(
+                    f"[ProductEvaluator] STREAM_EVAL_ERROR: item={idx}/{total_in_page}, global_idx={global_index}, {product.name}, error={type(e).__name__}",
+                    additional_route="eval_cache_verbose",
+                )
                 yield {
                     "type": "item_error",
                     "index": idx,
@@ -116,6 +164,18 @@ class ProductEvaluator:
                     "product_name": product.name,
                     "exception_type": type(e).__name__,
                 }
+
+        log_message(
+            f"[ProductEvaluator] STREAM_EVALUATION_COMPLETE: page={safe_page}, page_size={safe_page_size}, "
+            f"from_cache={stream_from_cache_count}, fresh_eval={stream_fresh_eval_count}, total={len(evaluations)}",
+            additional_route="eval_cache_verbose",
+        )
+
+        self.evaluation_cache.store_request_items(
+            start_index=request_start,
+            request_count=total_in_page,
+            evaluated_items=resolved_items,
+        )
 
         report = self._build_report(
             evaluations=evaluations,
@@ -169,6 +229,74 @@ class ProductEvaluator:
             low_priority_products=low_priority,
             summary_insights=insights,
         )
+
+    def _evaluate_request_with_cache(self, products: List[TrendingProduct], page: int, page_size: int) -> List[ProductEvaluation]:
+        """Evaluate a page with cache-first resolution, then compute only missing entries."""
+        safe_page = max(1, page)
+        safe_page_size = max(1, page_size)
+        request_start = (safe_page - 1) * safe_page_size
+
+        cached_hits, missing_indices = self.evaluation_cache.resolve_request(request_start, len(products))
+        
+        hit_rate = (len(cached_hits) / len(products) * 100) if len(products) > 0 else 0
+        log_message(
+            f"[ProductEvaluator] CACHE_RESOLVE: page={safe_page}, page_size={safe_page_size}, range=[{request_start}..{request_start + len(products) - 1}], "
+            f"total={len(products)}, hits={len(cached_hits)}, misses={len(missing_indices)}, hit_rate={hit_rate:.1f}%",
+            additional_route="eval_cache_verbose",
+        )
+        
+        log_message(
+            f"[ProductEvaluator] Cache check for page={safe_page}, page_size={safe_page_size}: "
+            f"hits={len(cached_hits)}, misses={len(missing_indices)}",
+            additional_route="evaluator",
+        )
+
+        evaluations: List[ProductEvaluation] = []
+        resolved_items: Dict[int, ProductEvaluation] = {}
+        evaluated_from_cache_count = 0
+        evaluated_fresh_count = 0
+        
+        for idx, product in enumerate(products, 1):
+            global_index = request_start + (idx - 1)
+
+            if global_index in cached_hits:
+                cached_eval = cached_hits[global_index]
+                evaluations.append(cached_eval)
+                resolved_items[global_index] = cached_eval
+                evaluated_from_cache_count += 1
+                log_message(
+                    f"[ProductEvaluator] Cache hit for product {idx}/{len(products)}: {product.name}",
+                    additional_route="evaluator",
+                )
+                continue
+
+            try:
+                evaluation = self._evaluate_single_product(product)
+                evaluations.append(evaluation)
+                resolved_items[global_index] = evaluation
+                evaluated_fresh_count += 1
+                log_message(
+                    f"[ProductEvaluator] Evaluated product {idx}/{len(products)}: {product.name} "
+                    f"(score: {evaluation.pop_relevance_score:.1f})",
+                    additional_route="evaluator",
+                )
+            except Exception as e:
+                log_message(f"[ProductEvaluator] ERROR evaluating product '{product.name}'", print_log=True, additional_route="evaluator")
+                log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
+                continue
+
+        log_message(
+            f"[ProductEvaluator] EVALUATION_COMPLETE: page={safe_page}, page_size={safe_page_size}, "
+            f"from_cache={evaluated_from_cache_count}, fresh_eval={evaluated_fresh_count}, total={len(evaluations)}",
+            additional_route="eval_cache_verbose",
+        )
+
+        self.evaluation_cache.store_request_items(
+            start_index=request_start,
+            request_count=len(products),
+            evaluated_items=resolved_items,
+        )
+        return evaluations
 
     
     #Individual product evaluation
