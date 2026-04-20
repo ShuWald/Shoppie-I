@@ -7,11 +7,12 @@ from .filter import (
 )
 from typing import Annotated
 import json
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from .evaluator import ProductEvaluator
 from .models import TrendingReport, ProductCategory
+from .flexlog import log_message
 
 #NOTES AT BOTTOM OF FILE
 
@@ -38,6 +39,17 @@ app.add_middleware(
 # Initialize evaluator from evaluator.py
 evaluator = ProductEvaluator()
 
+
+@app.on_event("startup")
+async def preload_trending_products_cache():
+    """Preload CSV trend data at startup to avoid first-request bottlenecks."""
+    try:
+        evaluator.trend_analyzer.preload_products()
+        log_message("[main] Preloaded trend data cache", additional_route="main")
+    except Exception as e:
+        log_message("[main] Failed to preload trend data cache", print_log=True, additional_route="main")
+        log_message(f"[main] Exception type: {type(e).__name__}", additional_route="main")
+
 '''
 --------------------------------
 API Endpoints
@@ -50,20 +62,26 @@ async def root():
 
 #Main Endpoint (trend report, formatting, error handling)
 @app.get("/api/evaluate-trending-products")
-async def evaluate_trending_products():
+async def evaluate_trending_products(
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=10, ge=1, le=100),
+    stream: bool = Query(default=False),
+):
     """
     Evaluate trending health/wellness products for Prince of Peace
     Returns a comprehensive report with prioritized recommendations
     """
     try:
-        report = evaluator.evaluate_trending_products()
-        # Convert to dict and handle enum serialization
-        report_dict = report.model_dump()
-        # Convert ProductCategory enum values to their string values
-        for product_list in [report_dict['high_priority_products'], report_dict['medium_priority_products'], report_dict['low_priority_products']]:
-            for product in product_list:
-                if 'product' in product and 'category' in product['product']:
-                    product['product']['category'] = product['product']['category'].value
+        if stream:
+            def ndjson_generator():
+                for event in evaluator.stream_trending_products(page=page, page_size=page_size):
+                    yield json.dumps(event) + "\n"
+
+            return StreamingResponse(ndjson_generator(), media_type="application/x-ndjson")
+
+        report = evaluator.evaluate_trending_products(page=page, page_size=page_size)
+        # Use JSON mode so enums and nested values serialize as JSON-safe primitives.
+        report_dict = report.model_dump(mode="json")
         return JSONResponse(content=report_dict)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Evaluation failed: {str(e)}")

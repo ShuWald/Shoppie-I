@@ -1,4 +1,4 @@
-from typing import List
+from typing import Dict, Generator, List, Tuple
 from datetime import datetime
 from .models import (
     TrendingProduct, ProductEvaluation, TrendingReport, 
@@ -9,6 +9,7 @@ from .business_rules import BusinessRulesEngine
 from .risk_assessment import RiskAssessmentEngine
 from .scoring import ScoringEngine
 from .flexlog import log_message
+from math import ceil
 
 #Pipeline manager for decision-making process
 class ProductEvaluator:
@@ -19,7 +20,7 @@ class ProductEvaluator:
         self.scoring_engine = ScoringEngine() #assigns scores + reasoning
     
     #Main Pipeline (end-to-end workflow)
-    def evaluate_trending_products(self) -> TrendingReport:
+    def evaluate_trending_products(self, page: int = 1, page_size: int = 10) -> TrendingReport:
         """Main evaluation pipeline"""
         log_message("[ProductEvaluator] Starting evaluation pipeline", print_log=True, additional_route="evaluator")
         
@@ -27,8 +28,12 @@ class ProductEvaluator:
         #Pulls list of TrendingProduct objects
         #Our databases and scraping information
         try:
-            trending_products = self.trend_analyzer.fetch_trending_products()
-            log_message(f"[ProductEvaluator] Fetched {len(trending_products)} trending products", additional_route="evaluator")
+            trending_products, total_available = self.trend_analyzer.fetch_trending_products(page=page, page_size=page_size)
+            log_message(
+                f"[ProductEvaluator] Fetched {len(trending_products)} products for page={page}, "
+                f"page_size={page_size}, total_available={total_available}",
+                additional_route="evaluator"
+            )
         except Exception as e:
             log_message("[ProductEvaluator] ERROR fetching trending products", print_log=True, additional_route="evaluator")
             log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
@@ -47,17 +52,102 @@ class ProductEvaluator:
                 log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
                 continue
         
-        #3. Prioritize products (grouped by score)
+        report = self._build_report(
+            evaluations=evaluations,
+            page=page,
+            page_size=page_size,
+            total_available=total_available,
+        )
+        
+        log_message(
+            f"[ProductEvaluator] Pipeline complete: {len(report.high_priority_products)} high, "
+            f"{len(report.medium_priority_products)} medium, {len(report.low_priority_products)} low priority products",
+            print_log=True,
+            additional_route="evaluator"
+        )
+        return report
+
+    def stream_trending_products(self, page: int = 1, page_size: int = 10) -> Generator[Dict, None, None]:
+        """Stream evaluation events so callers can receive each item as soon as it is processed."""
+        log_message("[ProductEvaluator] Starting streaming evaluation pipeline", print_log=True, additional_route="evaluator")
+
+        try:
+            trending_products, total_available = self.trend_analyzer.fetch_trending_products(page=page, page_size=page_size)
+        except Exception as e:
+            log_message("[ProductEvaluator] ERROR fetching trending products for streaming", print_log=True, additional_route="evaluator")
+            log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
+            yield {
+                "type": "fatal_error",
+                "message": "Failed to fetch trending products",
+                "exception_type": type(e).__name__,
+            }
+            return
+
+        total_in_page = len(trending_products)
+        yield {
+            "type": "meta",
+            "page": max(1, page),
+            "page_size": max(1, page_size),
+            "total_products_available": total_available,
+            "total_products_to_evaluate": total_in_page,
+            "total_pages": ceil(total_available / max(1, page_size)) if total_available else 0,
+        }
+
+        evaluations: List[ProductEvaluation] = []
+        for idx, product in enumerate(trending_products, 1):
+            try:
+                evaluation = self._evaluate_single_product(product)
+                evaluations.append(evaluation)
+                priority = self._priority_for_score(evaluation.pop_relevance_score)
+                yield {
+                    "type": "item",
+                    "index": idx,
+                    "total": total_in_page,
+                    "priority": priority,
+                    "evaluation": evaluation.model_dump(mode="json"),
+                }
+            except Exception as e:
+                log_message(f"[ProductEvaluator] ERROR streaming product '{product.name}'", print_log=True, additional_route="evaluator")
+                log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
+                yield {
+                    "type": "item_error",
+                    "index": idx,
+                    "total": total_in_page,
+                    "product_name": product.name,
+                    "exception_type": type(e).__name__,
+                }
+
+        report = self._build_report(
+            evaluations=evaluations,
+            page=page,
+            page_size=page_size,
+            total_available=total_available,
+        )
+        yield {
+            "type": "complete",
+            "report": report.model_dump(mode="json"),
+        }
+
+    def _priority_for_score(self, score: float) -> str:
+        if score >= 75:
+            return "high"
+        if score >= 60:
+            return "medium"
+        return "low"
+
+    def _prioritize_evaluations(self, evaluations: List[ProductEvaluation]) -> Tuple[List[ProductEvaluation], List[ProductEvaluation], List[ProductEvaluation]]:
         high_priority = [e for e in evaluations if e.pop_relevance_score >= 75]
         medium_priority = [e for e in evaluations if 60 <= e.pop_relevance_score < 75]
         low_priority = [e for e in evaluations if e.pop_relevance_score < 60]
-        
-        #4. Sort by score within each priority level
+
         high_priority.sort(key=lambda x: x.pop_relevance_score, reverse=True)
         medium_priority.sort(key=lambda x: x.pop_relevance_score, reverse=True)
         low_priority.sort(key=lambda x: x.pop_relevance_score, reverse=True)
-        
-        # Step 5: Generate summary insights
+        return high_priority, medium_priority, low_priority
+
+    def _build_report(self, evaluations: List[ProductEvaluation], page: int, page_size: int, total_available: int) -> TrendingReport:
+        high_priority, medium_priority, low_priority = self._prioritize_evaluations(evaluations)
+
         try:
             insights = self._generate_summary_insights(evaluations)
             log_message(f"[ProductEvaluator] Generated {len(insights)} summary insights", additional_route="evaluator")
@@ -65,20 +155,20 @@ class ProductEvaluator:
             log_message("[ProductEvaluator] ERROR generating insights", print_log=True, additional_route="evaluator")
             log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
             insights = []
-        
-        # Step 6: Create report
+
         log_message(f"[ProductEvaluator] Creating report with {len(evaluations)} evaluations", additional_route="evaluator")
-        report = TrendingReport(
+        return TrendingReport(
             generated_at=datetime.now().isoformat(),
             total_products_evaluated=len(evaluations),
+            page=max(1, page),
+            page_size=max(1, page_size),
+            total_products_available=total_available,
+            total_pages=ceil(total_available / max(1, page_size)) if total_available else 0,
             high_priority_products=high_priority,
             medium_priority_products=medium_priority,
             low_priority_products=low_priority,
-            summary_insights=insights
+            summary_insights=insights,
         )
-        
-        log_message(f"[ProductEvaluator] Pipeline complete: {len(high_priority)} high, {len(medium_priority)} medium, {len(low_priority)} low priority products", print_log=True, additional_route="evaluator")
-        return report
 
     
     #Individual product evaluation

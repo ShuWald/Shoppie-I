@@ -1,137 +1,73 @@
-# All of this is mock data, needs to be replaced with real data fetching logic
-
-import requests
-from typing import List, Dict
-from datetime import datetime
-import json
-import random
-from .models import TrendingProduct, ProductCategory
+import os
+from math import ceil
+from typing import List, Tuple
+from .models import TrendingProduct
+from .csv_data_processor import CSVDataProcessor
 from .flexlog import log_message
 
 # Fetches trend data 
 class TrendAnalyzer:
-    def __init__(self):
-        self.trend_sources = [
-            "google_trends",
-            "social_media", 
-            "market_research",
-            "industry_reports"
-        ]
+    def __init__(self, csv_path: str = None):
+        default_csv_path = os.path.join(os.path.dirname(__file__), "trends_data.csv")
+        self.csv_path = csv_path or default_csv_path
+        self.csv_processor = CSVDataProcessor(self.csv_path)
+        self._cached_products: List[TrendingProduct] = []
+        self._cache_initialized = False
+        self.max_page_size = 100
     
-    # Simulate fetching data and return as a TrendingProduct
-    # Will probably need a lot of validation logic especially if we use different data sources
-    def fetch_trending_products(self) -> List[TrendingProduct]:
-        """Simulate fetching trending health/wellness products from various sources"""
-        log_message("[TrendAnalyzer] Fetching trending products", additional_route="trend_analyzer")
-        trending_data = self._get_mock_trending_data()
-        log_message(f"[TrendAnalyzer] Raw items fetched: {len(trending_data)}", additional_route="trend_analyzer")
-        products = []
-        
-        for idx, item in enumerate(trending_data, 1):
-            try:
-                product = TrendingProduct(
-                    name=item["name"],
-                    category=ProductCategory(item["category"]),
-                    description=item["description"],
-                    trend_score=item["trend_score"],
-                    market_growth_rate=item["market_growth_rate"],
-                    consumer_interest_score=item["consumer_interest_score"],
-                    source=item["source"],
-                    trend_keywords=item["trend_keywords"]
-                )
-                products.append(product)
-            except Exception as e:
-                product_name = item.get("name", f"item_{idx}") if isinstance(item, dict) else f"item_{idx}"
-                log_message(f"[TrendAnalyzer] Skipping invalid product payload: {product_name}", print_log=True, additional_route="trend_analyzer")
-                log_message(f"[TrendAnalyzer] Exception type: {type(e).__name__}", additional_route="trend_analyzer")
-                continue
+    def preload_products(self) -> None:
+        """Warm the CSV cache at startup to reduce first-request latency."""
+        self._load_products(force_reload=True)
 
-        log_message(f"[TrendAnalyzer] Valid products ready: {len(products)}", additional_route="trend_analyzer")
-        
-        return products
-    
-    # Generates fake data
-    def _get_mock_trending_data(self) -> List[Dict]:
-        """Mock data for trending health/wellness products"""
-        return [
-            {
-                "name": "Adaptogenic Mushroom Coffee",
-                "category": "Herbal Supplement",
-                "description": "Coffee infused with functional mushrooms like lion's mane and reishi for stress relief and focus",
-                "trend_score": 87,
-                "market_growth_rate": 45,
-                "consumer_interest_score": 92,
-                "source": "social_media",
-                "trend_keywords": ["adaptogens", "functional mushrooms", "stress relief", "focus"]
-            },
-            {
-                "name": "Organic Ginger Turmeric Elixir",
-                "category": "Ginger",
-                "description": "Concentrated liquid supplement combining organic ginger and turmeric for anti-inflammatory benefits",
-                "trend_score": 79,
-                "market_growth_rate": 38,
-                "consumer_interest_score": 85,
-                "source": "market_research",
-                "trend_keywords": ["anti-inflammatory", "organic ginger", "turmeric", "immune support"]
-            },
-            {
-                "name": "CBD-Infused Herbal Tea",
-                "category": "Tea",
-                "description": "Relaxing tea blends with CBD for anxiety relief and better sleep",
-                "trend_score": 72,
-                "market_growth_rate": 42,
-                "consumer_interest_score": 78,
-                "source": "industry_reports",
-                "trend_keywords": ["cbd", "herbal tea", "anxiety relief", "sleep"]
-            },
-            {
-                "name": "Fermented Ginseng Shots",
-                "category": "Ginseng",
-                "description": "Ready-to-drink fermented ginseng shots for energy and immune support",
-                "trend_score": 68,
-                "market_growth_rate": 35,
-                "consumer_interest_score": 71,
-                "source": "google_trends",
-                "trend_keywords": ["fermented", "ginseng", "energy shots", "immune support"]
-            },
-            {
-                "name": "Medicinal Mushroom Complex",
-                "category": "Herbal Supplement",
-                "description": "Multi-mushroom supplement featuring reishi, chaga, cordyceps for overall wellness",
-                "trend_score": 75,
-                "market_growth_rate": 48,
-                "consumer_interest_score": 80,
-                "source": "social_media",
-                "trend_keywords": ["medicinal mushrooms", "reishi", "chaga", "wellness"]
-            },
-            {
-                "name": "Organic Honey Loquat Syrup",
-                "category": "Honey",
-                "description": "Traditional honey-based cough and throat relief syrup with loquat extract",
-                "trend_score": 65,
-                "market_growth_rate": 28,
-                "consumer_interest_score": 68,
-                "source": "market_research",
-                "trend_keywords": ["honey", "loquat", "cough relief", "traditional remedy"]
-            },
-            {
-                "name": "Herbal Pain Relief Patches",
-                "category": "Pain Relief",
-                "description": "Topical patches with natural herbs for muscle and joint pain relief",
-                "trend_score": 70,
-                "market_growth_rate": 33,
-                "consumer_interest_score": 74,
-                "source": "industry_reports",
-                "trend_keywords": ["pain relief", "topical", "herbal", "muscle pain"]
-            },
-            {
-                "name": "Matcha Ginger Energy Drinks",
-                "category": "Ginger",
-                "description": "Natural energy drinks combining matcha green tea and ginger for sustained energy",
-                "trend_score": 73,
-                "market_growth_rate": 41,
-                "consumer_interest_score": 76,
-                "source": "google_trends",
-                "trend_keywords": ["matcha", "ginger", "energy drinks", "natural caffeine"]
-            }
-        ]
+    def fetch_trending_products(self, page: int = 1, page_size: int = 10) -> Tuple[List[TrendingProduct], int]:
+        """
+        Fetch paginated trending products from CSV cache.
+
+        Returns:
+            (products_for_requested_page, total_available_products)
+        """
+        safe_page = max(1, page)
+        safe_page_size = max(1, min(page_size, self.max_page_size))
+
+        if safe_page != page or safe_page_size != page_size:
+            log_message(
+                f"[TrendAnalyzer] Normalized pagination request page={page}, page_size={page_size} "
+                f"-> page={safe_page}, page_size={safe_page_size}",
+                additional_route="trend_analyzer",
+            )
+
+        products = self._load_products()
+        total_available = len(products)
+
+        start_idx = (safe_page - 1) * safe_page_size
+        end_idx = start_idx + safe_page_size
+
+        if start_idx >= total_available:
+            total_pages = ceil(total_available / safe_page_size) if total_available else 0
+            log_message(
+                f"[TrendAnalyzer] Requested page={safe_page} out of range (total_pages={total_pages}); returning 0 products",
+                additional_route="trend_analyzer",
+            )
+            return [], total_available
+
+        paginated_products = products[start_idx:end_idx]
+        log_message(
+            f"[TrendAnalyzer] Returning {len(paginated_products)} products for page={safe_page}, "
+            f"page_size={safe_page_size}, total_available={total_available}",
+            additional_route="trend_analyzer",
+        )
+        return paginated_products, total_available
+
+    def _load_products(self, force_reload: bool = False) -> List[TrendingProduct]:
+        if self._cache_initialized and not force_reload:
+            return self._cached_products
+
+        log_message(f"[TrendAnalyzer] Loading trend data from CSV: {self.csv_path}", additional_route="trend_analyzer")
+        products = self.csv_processor.get_unique_products()
+        products.sort(key=lambda product: product.trend_score, reverse=True)
+
+        self._cached_products = products
+        self._cache_initialized = True
+
+        log_message(f"[TrendAnalyzer] Cached {len(products)} unique products", additional_route="trend_analyzer")
+        return self._cached_products

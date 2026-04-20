@@ -1,8 +1,9 @@
 """
 CSV Data Processor - Converts webscraped CSV data to TrendingProduct objects
 """
+import os
 import pandas as pd
-from typing import List
+from typing import List, Optional
 from .models import TrendingProduct, ProductCategory
 import re
 
@@ -10,7 +11,10 @@ class CSVDataProcessor:
     """Processes webscraped CSV data and converts to TrendingProduct objects"""
     
     def __init__(self, csv_path: str):
-        self.csv_path = csv_path
+        if os.path.isabs(csv_path):
+            self.csv_path = csv_path
+        else:
+            self.csv_path = os.path.join(os.path.dirname(__file__), csv_path)
         self.df = None
         
     def load_data(self) -> pd.DataFrame:
@@ -69,6 +73,20 @@ class CSVDataProcessor:
             return normalized_score * 0.4  # Lower reliability
         else:
             return normalized_score * 0.5  # Default
+
+    def _optional_str(self, value) -> Optional[str]:
+        if pd.isna(value):
+            return None
+        cleaned = str(value).strip()
+        return cleaned or None
+
+    def _optional_float(self, value) -> Optional[float]:
+        if pd.isna(value):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
     
     def extract_keywords(self, keyword: str, group: str) -> List[str]:
         """Extract relevant keywords from product data"""
@@ -122,9 +140,17 @@ class CSVDataProcessor:
                 keywords = self.extract_keywords(keyword, group)
                 
                 unique_products[product_key] = TrendingProduct(
-                    name=keyword,
+                    section=section or "interest_over_time",
+                    date=self._optional_str(row.get('date')),
+                    keyword=keyword,
+                    group=group or "Unknown",
+                    interest_score=float(interest_score) if not pd.isna(interest_score) else 0.0,
+                    region=self._optional_str(row.get('region')),
+                    query_type=self._optional_str(row.get('query_type')),
+                    related_term=self._optional_str(row.get('related_term')),
+                    related_value=self._optional_float(row.get('related_value')),
+                    suggestion_type=self._optional_str(row.get('suggestion_type')),
                     category=category,
-                    description=f"Trending product from {group} category with interest score {interest_score}",
                     trend_score=trend_score,
                     market_growth_rate=trend_score * 0.8,  # Estimate based on trend score
                     consumer_interest_score=trend_score * 0.9,  # Estimate based on trend score
@@ -141,7 +167,14 @@ class CSVDataProcessor:
                     existing_product.trend_score = new_trend_score
                     existing_product.market_growth_rate = new_trend_score * 0.8
                     existing_product.consumer_interest_score = new_trend_score * 0.9
-                    existing_product.description = f"Updated: {group} category with interest score {interest_score}"
+                    existing_product.interest_score = float(interest_score) if not pd.isna(interest_score) else 0.0
+                    existing_product.section = section or existing_product.section
+                    existing_product.date = self._optional_str(row.get('date')) or existing_product.date
+                    existing_product.region = self._optional_str(row.get('region')) or existing_product.region
+                    existing_product.query_type = self._optional_str(row.get('query_type')) or existing_product.query_type
+                    existing_product.related_term = self._optional_str(row.get('related_term')) or existing_product.related_term
+                    existing_product.related_value = self._optional_float(row.get('related_value')) if self._optional_float(row.get('related_value')) is not None else existing_product.related_value
+                    existing_product.suggestion_type = self._optional_str(row.get('suggestion_type')) or existing_product.suggestion_type
         
         return list(unique_products.values())
     

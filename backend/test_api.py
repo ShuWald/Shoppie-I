@@ -6,7 +6,7 @@ try:
     print(f"Status Code: {response.status_code}")
     print(f"Response: {response.text}")
     
-    response2 = requests.get('http://localhost:8000/api/evaluate-trending-products')
+    response2 = requests.get('http://localhost:8000/api/evaluate-trending-products?page=1&page_size=10')
     print(f"\nMain API Status Code: {response2.status_code}")
     print(f"Main API Response: {response2.text[:500]}...")
     

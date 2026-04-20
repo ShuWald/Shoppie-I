@@ -54,6 +54,14 @@ export default function Home() {
 
   const [hoveredPrediction, setHoveredPrediction] = useState(null);
 
+  const [page, setPage] = useState(1);
+
+  const [pageSize, setPageSize] = useState(10);
+
+  const [pageInput, setPageInput] = useState("1");
+
+  const [pageSizeInput, setPageSizeInput] = useState("10");
+
 
 
   useEffect(() => {
@@ -64,13 +72,49 @@ export default function Home() {
 
 
 
-  const fetchTrendingProducts = async () => {
+  const fetchTrendingProducts = async (requestedPage = page, requestedPageSize = pageSize) => {
+
+    const safePage = Math.max(1, Number(requestedPage) || 1);
+
+    const safePageSize = Math.min(100, Math.max(1, Number(requestedPageSize) || 10));
+
+    // Update the input fields to match requested values
+    setPageInput(String(safePage));
+
+    setPageSizeInput(String(safePageSize));
+
+    setPage(safePage);
+
+    setPageSize(safePageSize);
+
+    const initialReport = {
+      generated_at: new Date().toISOString(),
+      total_products_evaluated: 0,
+      page: safePage,
+      page_size: safePageSize,
+      total_products_available: 0,
+      total_pages: 0,
+      high_priority_products: [],
+      medium_priority_products: [],
+      low_priority_products: [],
+      summary_insights: [],
+    };
 
     try {
 
       setLoading(true);
 
-      const response = await fetch("http://localhost:8000/api/evaluate-trending-products");
+      setError(null);
+
+      setReport(initialReport);
+
+      const params = new URLSearchParams({
+        page: String(safePage),
+        page_size: String(safePageSize),
+        stream: "true",
+      });
+
+      const response = await fetch(`http://localhost:8000/api/evaluate-trending-products?${params.toString()}`);
 
       if (!response.ok) {
 
@@ -78,9 +122,88 @@ export default function Home() {
 
       }
 
-      const data = await response.json();
+      if (!response.body) {
+        const data = await response.json();
+        setReport(data);
+        return;
+      }
 
-      setReport(data);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      const appendEvaluation = (priority, evaluation) => {
+        const bucketKey =
+          priority === "high"
+            ? "high_priority_products"
+            : priority === "medium"
+              ? "medium_priority_products"
+              : "low_priority_products";
+
+        setReport((prev) => {
+          if (!prev) return prev;
+          return {
+            ...prev,
+            total_products_evaluated: prev.total_products_evaluated + 1,
+            [bucketKey]: [...prev[bucketKey], evaluation],
+          };
+        });
+      };
+
+      const applyStreamEvent = (event) => {
+        if (!event || !event.type) return;
+
+        if (event.type === "meta") {
+          setReport((prev) => ({
+            ...(prev || initialReport),
+            page: event.page ?? safePage,
+            page_size: event.page_size ?? safePageSize,
+            total_products_available: event.total_products_available ?? 0,
+            total_pages: event.total_pages ?? 0,
+          }));
+          return;
+        }
+
+        if (event.type === "item") {
+          appendEvaluation(event.priority, event.evaluation);
+          return;
+        }
+
+        if (event.type === "complete" && event.report) {
+          setReport(event.report);
+          return;
+        }
+
+        if (event.type === "fatal_error") {
+          throw new Error(event.message || "Streaming failed");
+        }
+      };
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          const event = JSON.parse(trimmed);
+          applyStreamEvent(event);
+        }
+      }
+
+      const tail = decoder.decode();
+      if (tail) {
+        buffer += tail;
+      }
+
+      if (buffer.trim()) {
+        const event = JSON.parse(buffer.trim());
+        applyStreamEvent(event);
+      }
 
     } catch (err) {
 
@@ -362,7 +485,7 @@ export default function Home() {
 
 
 
-  if (loading) {
+  if (loading && !report) {
 
     return (
 
@@ -384,7 +507,7 @@ export default function Home() {
 
 
 
-  if (error) {
+  if (error && !report) {
 
     return (
 
@@ -426,7 +549,7 @@ export default function Home() {
         {/* Header */}
         <header className="bg-white shadow-sm border-b">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="flex justify-between items-center">
+            <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
               <div className="flex items-center space-x-4">
                 {/* Prince of Peace Logo */}
                 <img 
@@ -443,9 +566,71 @@ export default function Home() {
                   </p>
                 </div>
               </div>
-              <div className="flex items-center space-x-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-end space-x-2">
+                  <div>
+                    <label htmlFor="page-input" className="block text-xs text-gray-500 mb-1">Page</label>
+                    <input
+                      id="page-input"
+                      type="text"
+                      inputMode="numeric"
+                      value={pageInput}
+                      onChange={(e) => setPageInput(e.target.value)}
+                      onBlur={() => {
+                        const num = Math.max(1, Number(pageInput) || 1);
+                        setPageInput(String(num));
+                      }}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          const num = Math.max(1, Number(pageInput) || 1);
+                          setPageInput(String(num));
+                          fetchTrendingProducts(num, pageSize);
+                        }
+                      }}
+                      className="w-20 px-2 py-1.5 border border-gray-300 rounded text-sm text-gray-900"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="page-size-input" className="block text-xs text-gray-500 mb-1">Page Size</label>
+                    <input
+                      id="page-size-input"
+                      type="text"
+                      inputMode="numeric"
+                      value={pageSizeInput}
+                      onChange={(e) => setPageSizeInput(e.target.value)}
+                      onBlur={() => {
+                        const num = Math.min(100, Math.max(1, Number(pageSizeInput) || 10));
+                        setPageSizeInput(String(num));
+                      }}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          const num = Math.min(100, Math.max(1, Number(pageSizeInput) || 10));
+                          setPageSizeInput(String(num));
+                          fetchTrendingProducts(page, num);
+                        }
+                      }}
+                      className="w-24 px-2 py-1.5 border border-gray-300 rounded text-sm text-gray-900"
+                    />
+                  </div>
+                  <button
+                    onClick={() => {
+                      const newPage = Math.max(1, Number(pageInput) || 1);
+                      const newPageSize = Math.min(100, Math.max(1, Number(pageSizeInput) || 10));
+                      setPageInput(String(newPage));
+                      setPageSizeInput(String(newPageSize));
+                      fetchTrendingProducts(newPage, newPageSize);
+                    }}
+                    className="px-3 py-2 bg-gray-800 text-white rounded hover:bg-gray-900 transition-colors"
+                  >
+                    Apply
+                  </button>
+                </div>
                 <button 
-                  onClick={fetchTrendingProducts}
+                  onClick={() => {
+                    const newPage = Math.max(1, Number(pageInput) || 1);
+                    const newPageSize = Math.min(100, Math.max(1, Number(pageSizeInput) || 10));
+                    fetchTrendingProducts(newPage, newPageSize);
+                  }}
                   className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
                 >
                   Refresh Analysis
@@ -462,6 +647,18 @@ export default function Home() {
         </header>
 
         <main className="w-full max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-6 md:py-8">
+
+        {loading && report && (
+          <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-700">
+            Streaming evaluations... {report.total_products_evaluated} item(s) received.
+          </div>
+        )}
+
+        {error && report && (
+          <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+            {error}
+          </div>
+        )}
 
         {/* Tab Content */}
         {activeTab === "overview" && (
@@ -1284,8 +1481,12 @@ export default function Home() {
 
         {/* Report Metadata */}
         <div className="bg-white rounded-lg shadow p-6 mt-8">
-          <div className="flex justify-between text-sm text-gray-600">
+          <div className="flex flex-col md:flex-row md:justify-between gap-2 text-sm text-gray-600">
             <span>Total Products Evaluated: {report.total_products_evaluated}</span>
+            <span>
+              Viewing Page {report.page} of {Math.max(report.total_pages || 0, 1)}
+              {" "}(page size {report.page_size}, total available {report.total_products_available})
+            </span>
             <span>Generated: {new Date(report.generated_at).toLocaleString()}</span>
           </div>
         </div>

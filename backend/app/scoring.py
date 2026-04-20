@@ -1,5 +1,5 @@
 from typing import List
-from .models import TrendingProduct, BusinessRuleEvaluation, RiskAssessment, ProductEvaluation
+from .models import TrendingProduct, BusinessRuleEvaluation, RiskAssessment, ProductEvaluation, ProductCategory
 
 # Class containing product relevance scoring logic
 # Functions: calculate overall relevance score, calculate scores based on individual factors(trends, business rules, risk flags), generate reasoning (based on flags), calculate confidence
@@ -121,7 +121,7 @@ class ScoringEngine:
         confidence_factors = []
         
         # Higher confidence for well-known categories
-        if product.category in ["ginger", "tea", "ginseng"]:
+        if product.category in [ProductCategory.GINGER, ProductCategory.TEA, ProductCategory.GINSENG]:
             confidence_factors.append(20)
         else:
             confidence_factors.append(10)

@@ -1,6 +1,6 @@
 import re
 from typing import List
-from .models import TrendingProduct, RiskAssessment, RiskLevel
+from .models import TrendingProduct, RiskAssessment, RiskLevel, ProductCategory
 from .filter import get_fda_substances, check_tariff_rates as check_tariff_api, estimate_shelf_life as estimate_shelf_life_api
 from .flexlog import log_message
 
@@ -43,7 +43,7 @@ class RiskAssessmentEngine:
     def _assess_tariff_risk(self, product: TrendingProduct) -> RiskLevel:
         """Assess tariff risk based on product category and likely sourcing"""
         # Higher risk for products likely sourced from high-tariff countries
-        high_risk_categories = ["Herbal Supplement", "tea"]
+        high_risk_categories = [ProductCategory.HERBAL_SUPPLEMENT, ProductCategory.TEA]
         if product.category in high_risk_categories:
             return RiskLevel.MEDIUM
         
