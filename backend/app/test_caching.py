@@ -21,7 +21,7 @@ def test_webscraper_cache():
     temp_cache = tempfile.mkdtemp()
     
     try:
-        from webscrapper import GoogleTrendsScraper
+        from webscraper import GoogleTrendsScraper
         
         # Initialize scraper with short cache time for testing
         scraper = GoogleTrendsScraper(
