@@ -18,9 +18,25 @@ class CSVDataProcessor:
         self.df = None
         
     def load_data(self) -> pd.DataFrame:
-        """Load and preprocess CSV data"""
+        """Load and preprocess CSV data with optimization"""
         try:
-            self.df = pd.read_csv(self.csv_path)
+            if self.df is not None:
+                return self.df  # Return cached data if already loaded
+            
+            # Optimize CSV loading with specific dtypes and low_memory=False
+            self.df = pd.read_csv(
+                self.csv_path,
+                dtype={
+                    'section': 'category',
+                    'keyword': 'string',
+                    'group': 'string',
+                    'region': 'string',
+                    'query_type': 'category',
+                    'related_term': 'string',
+                    'suggestion_type': 'category'
+                },
+                low_memory=False
+            )
             print(f"Loaded {len(self.df)} rows from {self.csv_path}")
             return self.df
         except Exception as e:

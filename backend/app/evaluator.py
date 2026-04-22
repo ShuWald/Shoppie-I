@@ -1,5 +1,8 @@
 from typing import Dict, Generator, List, Tuple
 from datetime import datetime
+import json
+import asyncio
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from .models import (
     TrendingProduct, ProductEvaluation, TrendingReport, 
     BusinessRuleEvaluation, RiskAssessment, SuggestedAction
@@ -12,6 +15,10 @@ from .flexlog import log_message
 from .evaluation_cache import EvaluationCache
 from math import ceil
 
+# Constants for batch processing thresholds
+ASYNC_BATCH_THRESHOLD = 5
+PARALLEL_BATCH_THRESHOLD = 10
+
 #Pipeline manager for decision-making process
 class ProductEvaluator:
     def __init__(self):
@@ -19,12 +26,12 @@ class ProductEvaluator:
         self.business_rules = BusinessRulesEngine() #checks company fit
         self.risk_assessor = RiskAssessmentEngine() #assesses risk
         self.scoring_engine = ScoringEngine() #assigns scores + reasoning
-        self.evaluation_cache = EvaluationCache(max_items=100)
+        self.evaluation_cache = EvaluationCache(max_items=1000)  # Increased cache size for better pagination
     
     #Main Pipeline (end-to-end workflow)
-    def evaluate_trending_products(self, page: int = 1, page_size: int = 10) -> TrendingReport:
-        """Main evaluation pipeline"""
-        log_message("[ProductEvaluator] Starting evaluation pipeline", print_log=True, additional_route="evaluator")
+    async def evaluate_trending_products(self, page: int = 1, page_size: int = 10) -> TrendingReport:
+        """Main evaluation pipeline with async processing"""
+        log_message("[ProductEvaluator] Starting async evaluation pipeline", print_log=True, additional_route="evaluator")
         
         #1. Fetch trending products (input)
         #Pulls list of TrendingProduct objects
@@ -41,7 +48,7 @@ class ProductEvaluator:
             log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
             raise
 
-        evaluations = self._evaluate_request_with_cache(
+        evaluations = await self._evaluate_request_with_cache_async(
             products=trending_products,
             page=page,
             page_size=page_size,
@@ -62,7 +69,7 @@ class ProductEvaluator:
         )
         return report
 
-    def stream_trending_products(self, page: int = 1, page_size: int = 10) -> Generator[Dict, None, None]:
+    def stream_trending_products(self, page: int = 1, page_size: int = 10):
         """Stream evaluation events so callers can receive each item as soon as it is processed."""
         log_message("[ProductEvaluator] Starting streaming evaluation pipeline", print_log=True, additional_route="evaluator")
 
@@ -71,11 +78,11 @@ class ProductEvaluator:
         except Exception as e:
             log_message("[ProductEvaluator] ERROR fetching trending products for streaming", print_log=True, additional_route="evaluator")
             log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
-            yield {
+            yield json.dumps({
                 "type": "fatal_error",
                 "message": "Failed to fetch trending products",
                 "exception_type": type(e).__name__,
-            }
+            }) + "\n"
             return
 
         total_in_page = len(trending_products)
@@ -92,7 +99,7 @@ class ProductEvaluator:
             additional_route="eval_cache_verbose",
         )
 
-        yield {
+        yield json.dumps({
             "type": "meta",
             "page": safe_page,
             "page_size": safe_page_size,
@@ -101,69 +108,88 @@ class ProductEvaluator:
             "total_pages": ceil(total_available / max(1, page_size)) if total_available else 0,
             "cache_hits": len(cached_hits),
             "cache_misses": len(missing_indices),
-        }
+        }) + "\n"
 
         evaluations: List[ProductEvaluation] = []
         resolved_items: Dict[int, ProductEvaluation] = {}
         stream_from_cache_count = 0
         stream_fresh_eval_count = 0
         
+        # Process cached items first
+        fresh_products = []
+        fresh_indices = []
+        
         for idx, product in enumerate(trending_products, 1):
             global_index = request_start + (idx - 1)
             if global_index in cached_hits:
                 cached_evaluation = cached_hits[global_index]
+                # cached_evaluations.append((idx, cached_evaluation))  # Removed unused variable
                 evaluations.append(cached_evaluation)
                 resolved_items[global_index] = cached_evaluation
                 stream_from_cache_count += 1
                 
-                log_message(
-                    f"[ProductEvaluator] STREAM_CACHED_ITEM: item={idx}/{total_in_page}, global_idx={global_index}, {product.name}",
-                    additional_route="eval_cache_verbose",
-                )
-                
-                yield {
+                yield json.dumps({
                     "type": "item",
                     "index": idx,
                     "total": total_in_page,
                     "priority": self._priority_for_score(cached_evaluation.pop_relevance_score),
                     "from_cache": True,
                     "evaluation": cached_evaluation.model_dump(mode="json"),
-                }
-                continue
-
+                }) + "\n"
+            else:
+                fresh_products.append(product)
+                fresh_indices.append((idx, global_index))
+        
+        # Batch process fresh products for better performance
+        if fresh_products:
             try:
-                evaluation = self._evaluate_single_product(product)
-                evaluations.append(evaluation)
-                resolved_items[global_index] = evaluation
-                stream_fresh_eval_count += 1
+                batch_evaluations = self._evaluate_products_batch(fresh_products)
                 
-                log_message(
-                    f"[ProductEvaluator] STREAM_FRESH_EVAL: item={idx}/{total_in_page}, global_idx={global_index}, {product.name} (score={evaluation.pop_relevance_score:.1f})",
-                    additional_route="eval_cache_verbose",
-                )
-                
-                yield {
-                    "type": "item",
-                    "index": idx,
-                    "total": total_in_page,
-                    "priority": self._priority_for_score(evaluation.pop_relevance_score),
-                    "from_cache": False,
-                    "evaluation": evaluation.model_dump(mode="json"),
-                }
+                for i, (idx, global_index) in enumerate(fresh_indices):
+                    evaluation = batch_evaluations[i]
+                    evaluations.append(evaluation)
+                    resolved_items[global_index] = evaluation
+                    stream_fresh_eval_count += 1
+                    
+                    yield json.dumps({
+                        "type": "item",
+                        "index": idx,
+                        "total": total_in_page,
+                        "priority": self._priority_for_score(evaluation.pop_relevance_score),
+                        "from_cache": False,
+                        "evaluation": evaluation.model_dump(mode="json"),
+                    }) + "\n"
+                        
             except Exception as e:
-                log_message(f"[ProductEvaluator] ERROR streaming product '{product.name}'", print_log=True, additional_route="evaluator")
+                log_message(f"[ProductEvaluator] ERROR in batch evaluation", print_log=True, additional_route="evaluator")
                 log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
-                log_message(
-                    f"[ProductEvaluator] STREAM_EVAL_ERROR: item={idx}/{total_in_page}, global_idx={global_index}, {product.name}, error={type(e).__name__}",
-                    additional_route="eval_cache_verbose",
-                )
-                yield {
-                    "type": "item_error",
-                    "index": idx,
-                    "total": total_in_page,
-                    "product_name": product.name,
-                    "exception_type": type(e).__name__,
-                }
+                
+                # Fallback to individual evaluation for failed products
+                for i, (idx, global_index) in enumerate(fresh_indices):
+                    product = fresh_products[i]
+                    try:
+                        evaluation = self._evaluate_single_product(product)
+                        evaluations.append(evaluation)
+                        resolved_items[global_index] = evaluation
+                        stream_fresh_eval_count += 1
+                        
+                        yield json.dumps({
+                            "type": "item",
+                            "index": idx,
+                            "total": total_in_page,
+                            "priority": self._priority_for_score(evaluation.pop_relevance_score),
+                            "from_cache": False,
+                            "evaluation": evaluation.model_dump(mode="json"),
+                        }) + "\n"
+                    except Exception as e:
+                        log_message(f"[ProductEvaluator] ERROR streaming product '{product.name}'", print_log=True, additional_route="evaluator")
+                        yield json.dumps({
+                            "type": "item_error",
+                            "index": idx,
+                            "total": total_in_page,
+                            "product_name": product.name,
+                            "exception_type": type(e).__name__,
+                        }) + "\n"
 
         log_message(
             f"[ProductEvaluator] STREAM_EVALUATION_COMPLETE: page={safe_page}, page_size={safe_page_size}, "
@@ -173,7 +199,7 @@ class ProductEvaluator:
 
         self.evaluation_cache.store_request_items(
             start_index=request_start,
-            request_count=total_in_page,
+            request_count=len(trending_products),
             evaluated_items=resolved_items,
         )
 
@@ -183,10 +209,10 @@ class ProductEvaluator:
             page_size=page_size,
             total_available=total_available,
         )
-        yield {
+        yield json.dumps({
             "type": "complete",
             "report": report.model_dump(mode="json"),
-        }
+        }) + "\n"
 
     def _priority_for_score(self, score: float) -> str:
         if score >= 75:
@@ -253,8 +279,13 @@ class ProductEvaluator:
 
         evaluations: List[ProductEvaluation] = []
         resolved_items: Dict[int, ProductEvaluation] = {}
+        failed_products: List[Dict] = []
         evaluated_from_cache_count = 0
         evaluated_fresh_count = 0
+        
+        # Process cached items first
+        fresh_products = []
+        fresh_indices = []
         
         for idx, product in enumerate(products, 1):
             global_index = request_start + (idx - 1)
@@ -268,28 +299,186 @@ class ProductEvaluator:
                     f"[ProductEvaluator] Cache hit for product {idx}/{len(products)}: {product.name}",
                     additional_route="evaluator",
                 )
-                continue
-
+            else:
+                fresh_products.append(product)
+                fresh_indices.append((idx, global_index))
+        
+        # Batch process fresh products for better performance
+        if fresh_products:
             try:
-                evaluation = self._evaluate_single_product(product)
-                evaluations.append(evaluation)
-                resolved_items[global_index] = evaluation
-                evaluated_fresh_count += 1
-                log_message(
-                    f"[ProductEvaluator] Evaluated product {idx}/{len(products)}: {product.name} "
-                    f"(score: {evaluation.pop_relevance_score:.1f})",
-                    additional_route="evaluator",
-                )
+                batch_evaluations = self._evaluate_products_batch(fresh_products)
+                
+                for i, (idx, global_index) in enumerate(fresh_indices):
+                    evaluation = batch_evaluations[i]
+                    evaluations.append(evaluation)
+                    resolved_items[global_index] = evaluation
+                    evaluated_fresh_count += 1
+                    log_message(
+                        f"[ProductEvaluator] Batch evaluated product {idx}/{len(products)}: {evaluation.product.name} "
+                        f"(score: {evaluation.pop_relevance_score:.1f})",
+                        additional_route="evaluator",
+                    )
+                        
             except Exception as e:
-                log_message(f"[ProductEvaluator] ERROR evaluating product '{product.name}'", print_log=True, additional_route="evaluator")
+                log_message(f"[ProductEvaluator] ERROR in batch evaluation", print_log=True, additional_route="evaluator")
                 log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
-                continue
+                
+                # Fallback to individual evaluation for failed products
+                for i, (idx, global_index) in enumerate(fresh_indices):
+                    product = fresh_products[i]
+                    try:
+                        evaluation = self._evaluate_single_product(product)
+                        evaluations.append(evaluation)
+                        resolved_items[global_index] = evaluation
+                        evaluated_fresh_count += 1
+                        log_message(
+                            f"[ProductEvaluator] Evaluated product {idx}/{len(products)}: {product.name} "
+                            f"(score: {evaluation.pop_relevance_score:.1f})",
+                            additional_route="evaluator",
+                        )
+                    except Exception as e:
+                        log_message(f"[ProductEvaluator] ERROR evaluating product '{product.name}'", print_log=True, additional_route="evaluator")
+                        log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
+                        # Add to failed products list instead of silently continuing
+                        failed_products.append({
+                            "product_name": product.name,
+                            "error": str(e),
+                            "exception_type": type(e).__name__
+                        })
+                        continue
 
         log_message(
             f"[ProductEvaluator] EVALUATION_COMPLETE: page={safe_page}, page_size={safe_page_size}, "
             f"from_cache={evaluated_from_cache_count}, fresh_eval={evaluated_fresh_count}, total={len(evaluations)}",
             additional_route="eval_cache_verbose",
         )
+        
+        if failed_products:
+            log_message(
+                f"[ProductEvaluator] FAILED_EVALUATIONS: {len(failed_products)} products failed evaluation",
+                print_log=True,
+                additional_route="evaluator",
+            )
+            for failed in failed_products:
+                log_message(
+                    f"[ProductEvaluator] Failed: {failed['product_name']} - {failed['exception_type']}: {failed['error']}",
+                    additional_route="evaluator",
+                )
+
+        self.evaluation_cache.store_request_items(
+            start_index=request_start,
+            request_count=len(products),
+            evaluated_items=resolved_items,
+        )
+
+    async def _evaluate_request_with_cache_async(self, products: List[TrendingProduct], page: int, page_size: int) -> List[ProductEvaluation]:
+        """Evaluate a page with cache-first resolution, then compute only missing entries using async."""
+        safe_page = max(1, page)
+        safe_page_size = max(1, page_size)
+        request_start = (safe_page - 1) * safe_page_size
+
+        cached_hits, missing_indices = self.evaluation_cache.resolve_request(request_start, len(products))
+        
+        hit_rate = (len(cached_hits) / len(products) * 100) if len(products) > 0 else 0
+        log_message(
+            f"[ProductEvaluator] CACHE_RESOLVE: page={safe_page}, page_size={safe_page_size}, range=[{request_start}..{request_start + len(products) - 1}], "
+            f"total={len(products)}, hits={len(cached_hits)}, misses={len(missing_indices)}, hit_rate={hit_rate:.1f}%",
+            additional_route="eval_cache_verbose",
+        )
+        
+        log_message(
+            f"[ProductEvaluator] Cache check for page={safe_page}, page_size={safe_page_size}: "
+            f"hits={len(cached_hits)}, misses={len(missing_indices)}",
+            additional_route="evaluator",
+        )
+
+        evaluations: List[ProductEvaluation] = []
+        resolved_items: Dict[int, ProductEvaluation] = {}
+        failed_products: List[Dict] = []
+        evaluated_from_cache_count = 0
+        evaluated_fresh_count = 0
+        
+        # Process cached items first
+        fresh_products = []
+        fresh_indices = []
+        
+        for idx, product in enumerate(products, 1):
+            global_index = request_start + (idx - 1)
+
+            if global_index in cached_hits:
+                cached_eval = cached_hits[global_index]
+                evaluations.append(cached_eval)
+                resolved_items[global_index] = cached_eval
+                evaluated_from_cache_count += 1
+                log_message(
+                    f"[ProductEvaluator] Cache hit for product {idx}/{len(products)}: {product.name}",
+                    additional_route="evaluator",
+                )
+            else:
+                fresh_products.append(product)
+                fresh_indices.append((idx, global_index))
+        
+        # Batch process fresh products for better performance
+        if fresh_products:
+            try:
+                batch_evaluations = self._evaluate_products_batch(fresh_products)
+                
+                for i, (idx, global_index) in enumerate(fresh_indices):
+                    evaluation = batch_evaluations[i]
+                    evaluations.append(evaluation)
+                    resolved_items[global_index] = evaluation
+                    evaluated_fresh_count += 1
+                    log_message(
+                        f"[ProductEvaluator] Batch evaluated product {idx}/{len(products)}: {evaluation.product.name} "
+                        f"(score: {evaluation.pop_relevance_score:.1f})",
+                        additional_route="evaluator",
+                    )
+                        
+            except Exception as e:
+                log_message(f"[ProductEvaluator] ERROR in batch evaluation", print_log=True, additional_route="evaluator")
+                log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
+                
+                # Fallback to individual evaluation for failed products
+                for i, (idx, global_index) in enumerate(fresh_indices):
+                    product = fresh_products[i]
+                    try:
+                        evaluation = self._evaluate_single_product(product)
+                        evaluations.append(evaluation)
+                        resolved_items[global_index] = evaluation
+                        evaluated_fresh_count += 1
+                        log_message(
+                            f"[ProductEvaluator] Evaluated product {idx}/{len(products)}: {product.name} "
+                            f"(score: {evaluation.pop_relevance_score:.1f})",
+                            additional_route="evaluator",
+                        )
+                    except Exception as e:
+                        log_message(f"[ProductEvaluator] ERROR evaluating product '{product.name}'", print_log=True, additional_route="evaluator")
+                        log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
+                        # Add to failed products list instead of silently continuing
+                        failed_products.append({
+                            "product_name": product.name,
+                            "error": str(e),
+                            "exception_type": type(e).__name__
+                        })
+                        continue
+
+        log_message(
+            f"[ProductEvaluator] EVALUATION_COMPLETE: page={safe_page}, page_size={safe_page_size}, "
+            f"from_cache={evaluated_from_cache_count}, fresh_eval={evaluated_fresh_count}, total={len(evaluations)}",
+            additional_route="eval_cache_verbose",
+        )
+        
+        if failed_products:
+            log_message(
+                f"[ProductEvaluator] FAILED_EVALUATIONS: {len(failed_products)} products failed evaluation",
+                print_log=True,
+                additional_route="evaluator",
+            )
+            for failed in failed_products:
+                log_message(
+                    f"[ProductEvaluator] Failed: {failed['product_name']} - {failed['exception_type']}: {failed['error']}",
+                    additional_route="evaluator",
+                )
 
         self.evaluation_cache.store_request_items(
             start_index=request_start,
@@ -298,50 +487,232 @@ class ProductEvaluator:
         )
         return evaluations
 
-    
-    #Individual product evaluation
-    def _evaluate_single_product(self, product: TrendingProduct) -> ProductEvaluation:
-        """Evaluate a single trending product"""
+    async def _evaluate_products_batch_async(self, products: List[TrendingProduct]) -> List[ProductEvaluation]:
+        """Evaluate multiple products using async/await for maximum performance"""
+        if len(products) <= ASYNC_BATCH_THRESHOLD:
+            # Use sequential processing for very small batches
+            return self._evaluate_products_batch_sequential(products)
+        
+        async def evaluate_single_async(product: TrendingProduct) -> ProductEvaluation:
+            """Evaluate a single product with all steps running concurrently"""
+            try:
+                # Run all evaluation steps concurrently
+                business_rules_task = asyncio.create_task(
+                    asyncio.to_thread(self.business_rules.evaluate_product, product)
+                )
+                risk_assessment_task = asyncio.create_task(
+                    asyncio.to_thread(self.risk_assessor.assess_risks, product)
+                )
+                
+                # Wait for business rules and risk assessment to complete
+                business_rules, risk_assessment = await asyncio.gather(
+                    business_rules_task, risk_assessment_task
+                )
+                
+                # Calculate score, action, reasoning, confidence (these can run in parallel)
+                pop_score_task = asyncio.create_task(
+                    asyncio.to_thread(
+                        self.scoring_engine.calculate_pop_relevance_score,
+                        product, business_rules, risk_assessment
+                    )
+                )
+                suggested_action_task = asyncio.create_task(
+                    asyncio.to_thread(self.business_rules.suggest_action, product, business_rules)
+                )
+                reasoning_task = asyncio.create_task(
+                    asyncio.to_thread(
+                        self.scoring_engine.generate_reasoning,
+                        product, business_rules, risk_assessment, pop_score
+                    )
+                )
+                confidence_task = asyncio.create_task(
+                    asyncio.to_thread(
+                        self.scoring_engine.calculate_confidence_score,
+                        product, business_rules, risk_assessment
+                    )
+                )
+                
+                # Wait for all scoring tasks to complete
+                pop_score, suggested_action, reasoning, confidence = await asyncio.gather(
+                    pop_score_task, suggested_action_task, reasoning_task, confidence_task
+                )
+                
+                return ProductEvaluation(
+                    product=product,
+                    pop_relevance_score=pop_score,
+                    business_rules=business_rules,
+                    risk_assessment=risk_assessment,
+                    suggested_action=suggested_action,
+                    reasoning=reasoning,
+                    confidence_score=confidence
+                )
+            except Exception as e:
+                log_message(f"[ProductEvaluator] ERROR evaluating {product.name} async", additional_route="evaluator")
+                raise
         
         try:
-            step = "business_rules.evaluate_product"
+            # Use asyncio.gather to evaluate all products concurrently
+            evaluation_tasks = [evaluate_single_async(product) for product in products]
+            evaluations = await asyncio.gather(*evaluation_tasks, return_exceptions=False)
+            
+            # Filter out any failed evaluations
+            return [eval for eval in evaluations if eval is not None]
+            
+        except Exception as e:
+            log_message(f"[ProductEvaluator] ERROR in async batch evaluation", print_log=True, additional_route="evaluator")
+            log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
+            # Fallback to sequential processing
+            return self._evaluate_products_batch_sequential(products)
+
+    def _evaluate_products_batch(self, products: List[TrendingProduct]) -> List[ProductEvaluation]:
+        """Evaluate multiple products in parallel for maximum performance"""
+        if len(products) <= PARALLEL_BATCH_THRESHOLD:
+            # Use sequential processing for small batches
+            return self._evaluate_products_batch_sequential(products)
+        
+        evaluations = [None] * len(products)
+        
+        def evaluate_single_parallel(idx_product):
+            idx, product = idx_product
+            try:
+                # Business rules evaluation
+                business_rules = self.business_rules.evaluate_product(product)
+                
+                # Risk assessment
+                risk_assessment = self.risk_assessor.assess_risks(product)
+                
+                # Calculate PoP relevance score
+                pop_score = self.scoring_engine.calculate_pop_relevance_score(
+                    product, business_rules, risk_assessment
+                )
+                
+                # Suggest action
+                suggested_action = self.business_rules.suggest_action(product, business_rules)
+                
+                # Generate reasoning
+                reasoning = self.scoring_engine.generate_reasoning(
+                    product, business_rules, risk_assessment, pop_score
+                )
+                
+                # Calculate confidence
+                confidence = self.scoring_engine.calculate_confidence_score(
+                    product, business_rules, risk_assessment
+                )
+                
+                return idx, ProductEvaluation(
+                    product=product,
+                    pop_relevance_score=pop_score,
+                    business_rules=business_rules,
+                    risk_assessment=risk_assessment,
+                    suggested_action=suggested_action,
+                    reasoning=reasoning,
+                    confidence_score=confidence
+                )
+            except Exception as e:
+                log_message(f"[ProductEvaluator] ERROR evaluating {product.name} in parallel", additional_route="evaluator")
+                return idx, None
+        
+        try:
+            # Use ThreadPoolExecutor for parallel processing
+            max_workers = min(16, len(products))  # Increase to 16 workers for maximum throughput
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all tasks
+                future_to_idx = {
+                    executor.submit(evaluate_single_parallel, (i, product)): i 
+                    for i, product in enumerate(products)
+                }
+                
+                # Collect results as they complete
+                for future in as_completed(future_to_idx):
+                    idx, evaluation = future.result()
+                    if evaluation is not None:
+                        evaluations[idx] = evaluation
+            
+            # Filter out any None values (failed evaluations)
+            return [eval for eval in evaluations if eval is not None]
+            
+        except Exception as e:
+            log_message(f"[ProductEvaluator] ERROR in parallel batch evaluation", print_log=True, additional_route="evaluator")
+            log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
+            # Fallback to sequential processing
+            return self._evaluate_products_batch_sequential(products)
+
+    def _evaluate_products_batch_sequential(self, products: List[TrendingProduct]) -> List[ProductEvaluation]:
+        """Sequential batch evaluation as fallback"""
+        evaluations = []
+        
+        try:
+            for product in products:
+                # Business rules evaluation
+                business_rules = self.business_rules.evaluate_product(product)
+                
+                # Risk assessment
+                risk_assessment = self.risk_assessor.assess_risks(product)
+                
+                # Calculate PoP relevance score
+                pop_score = self.scoring_engine.calculate_pop_relevance_score(
+                    product, business_rules, risk_assessment
+                )
+                
+                # Suggest action
+                suggested_action = self.business_rules.suggest_action(product, business_rules)
+                
+                # Generate reasoning
+                reasoning = self.scoring_engine.generate_reasoning(
+                    product, business_rules, risk_assessment, pop_score
+                )
+                
+                # Calculate confidence
+                confidence = self.scoring_engine.calculate_confidence_score(
+                    product, business_rules, risk_assessment
+                )
+                
+                evaluations.append(ProductEvaluation(
+                    product=product,
+                    pop_relevance_score=pop_score,
+                    business_rules=business_rules,
+                    risk_assessment=risk_assessment,
+                    suggested_action=suggested_action,
+                    reasoning=reasoning,
+                    confidence_score=confidence
+                ))
+                
+        except Exception as e:
+            log_message(f"[ProductEvaluator] ERROR in sequential batch evaluation", print_log=True, additional_route="evaluator")
+            log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
+            raise
+            
+        return evaluations
+
+    #Individual product evaluation (fallback)
+    def _evaluate_single_product(self, product: TrendingProduct) -> ProductEvaluation:
+        """Evaluate a single trending product - optimized for speed"""
+        
+        try:
             # Business rules evaluation
             business_rules = self.business_rules.evaluate_product(product)
-            log_message(f"[ProductEvaluator] [{product.name}] DONE {step}", additional_route="evaluator")
             
-            step = "risk_assessor.assess_risks"
             # Risk assessment
             risk_assessment = self.risk_assessor.assess_risks(product)
-            log_message(f"[ProductEvaluator] [{product.name}] DONE {step}", additional_route="evaluator")
-            log_message(f"[ProductEvaluator] {product.name} - tariff_risk:{risk_assessment.tariff_risk.value}, fda:{risk_assessment.fda_concern.value}, flags:{len(risk_assessment.flags)}", additional_route="evaluator")
             
-            step = "scoring_engine.calculate_pop_relevance_score"
             # Calculate PoP relevance score
             pop_score = self.scoring_engine.calculate_pop_relevance_score(
                 product, business_rules, risk_assessment
             )
-            log_message(f"[ProductEvaluator] [{product.name}] DONE {step} -> score:{pop_score:.1f}", additional_route="evaluator")
             
-            step = "business_rules.suggest_action"
             # Suggest action
             suggested_action = self.business_rules.suggest_action(product, business_rules)
-            log_message(f"[ProductEvaluator] [{product.name}] DONE {step} -> action:{suggested_action.value}", additional_route="evaluator")
             
-            step = "scoring_engine.generate_reasoning"
             # Generate reasoning
             reasoning = self.scoring_engine.generate_reasoning(
                 product, business_rules, risk_assessment, pop_score
             )
-            log_message(f"[ProductEvaluator] [{product.name}] DONE {step}", additional_route="evaluator")
             
-            step = "scoring_engine.calculate_confidence_score"
             # Calculate confidence
             confidence = self.scoring_engine.calculate_confidence_score(
                 product, business_rules, risk_assessment
             )
-            log_message(f"[ProductEvaluator] [{product.name}] DONE {step} -> confidence:{confidence:.1f}", additional_route="evaluator")
             
-            step = "ProductEvaluation(...)"
             return ProductEvaluation(
                 product=product,
                 pop_relevance_score=pop_score,
@@ -352,11 +723,11 @@ class ProductEvaluator:
                 confidence_score=confidence
             )
         except Exception as e:
-            log_message(f"[ProductEvaluator] CRITICAL ERROR in _evaluate_single_product for '{product.name}' at step '{step}'", print_log=True, additional_route="evaluator")
+            log_message(f"[ProductEvaluator] CRITICAL ERROR in _evaluate_single_product for '{product.name}'", print_log=True, additional_route="evaluator")
             # Intentionally not logging {e} text here because some exceptions include massive HTML payloads.
             log_message(f"[ProductEvaluator] Exception type: {type(e).__name__}", additional_route="evaluator")
             raise
-    
+
     def _generate_summary_insights(self, evaluations: List[ProductEvaluation]) -> List[str]:
         """Generate summary insights from all evaluations"""
         log_message(f"[ProductEvaluator] Generating insights from {len(evaluations)} evaluations", additional_route="evaluator")

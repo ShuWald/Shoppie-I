@@ -65,10 +65,25 @@ export default function Home() {
 
 
   useEffect(() => {
-
+    // Trigger pre-caching when dashboard loads
+    triggerPreCaching();
     fetchTrendingProducts();
-
   }, []);
+
+  const triggerPreCaching = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/api/pre-cache-first-pages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      const result = await response.json();
+      console.log('Pre-caching completed:', result);
+    } catch (error) {
+      console.error('Failed to start pre-caching:', error);
+    }
+  };
 
 
 
@@ -164,23 +179,14 @@ export default function Home() {
           return;
         }
 
-        if (event.type === "item") {
+        if (event.type === "evaluation" || event.type === "item") {
           appendEvaluation(event.priority, event.evaluation);
           return;
-        }
-
-        if (event.type === "complete" && event.report) {
-          setReport(event.report);
-          return;
-        }
-
-        if (event.type === "fatal_error") {
-          throw new Error(event.message || "Streaming failed");
         }
       };
 
       while (true) {
-        const { value, done } = await reader.read();
+        const { done, value } = await reader.read();
         if (done) break;
 
         buffer += decoder.decode(value, { stream: true });
@@ -188,21 +194,14 @@ export default function Home() {
         buffer = lines.pop() || "";
 
         for (const line of lines) {
-          const trimmed = line.trim();
-          if (!trimmed) continue;
-          const event = JSON.parse(trimmed);
-          applyStreamEvent(event);
+          if (!line.trim()) continue;
+          try {
+            const event = JSON.parse(line);
+            applyStreamEvent(event);
+          } catch (e) {
+            console.error("Failed to parse stream event:", line, e);
+          }
         }
-      }
-
-      const tail = decoder.decode();
-      if (tail) {
-        buffer += tail;
-      }
-
-      if (buffer.trim()) {
-        const event = JSON.parse(buffer.trim());
-        applyStreamEvent(event);
       }
 
     } catch (err) {
