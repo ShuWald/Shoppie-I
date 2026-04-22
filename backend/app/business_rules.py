@@ -110,16 +110,14 @@ class BusinessRulesEngine:
             evaluation.supply_chain_feasible
         ])
         
-        # If product aligns well with existing PoP categories and supply chain
-        if (passed_rules >= 4 and 
-            evaluation.supply_chain_feasible and 
-            product.category in [ProductCategory.GINGER, ProductCategory.TEA, ProductCategory.GINSENG]):
+        # Distribute Existing: High alignment (>=4 rules passed)
+        if passed_rules >= 4:
             return SuggestedAction.DISTRIBUTE_EXISTING
         
-        # If product is promising but requires new development
-        elif passed_rules >= 3:
+        # Develop New: Medium alignment (2-3 rules passed)
+        elif passed_rules >= 2:
             return SuggestedAction.DEVELOP_NEW
         
-        # Default to develop new for borderline cases
+        # Not Recommended: Poor alignment (<2 rules passed)
         else:
-            return SuggestedAction.DEVELOP_NEW
+            return SuggestedAction.NOT_RECOMMENDED

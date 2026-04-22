@@ -262,11 +262,43 @@ export default function Home() {
 
   const getActionColor = (action) => {
 
-    return action === "Distribute existing product" 
+    if (action === "Distribute existing product") {
 
-      ? "text-blue-600 bg-blue-100" 
+      return "text-blue-600 bg-blue-100";
 
-      : "text-purple-600 bg-purple-100";
+    } else if (action === "Develop new PoP product") {
+
+      return "text-purple-600 bg-purple-100";
+
+    } else if (action === "Not recommended - poor business alignment") {
+
+      return "text-red-600 bg-red-100";
+
+    }
+
+    return "text-gray-600 bg-gray-100";
+
+  };
+
+
+
+  const getRiskWeight = (riskType) => {
+
+    // Display risk weights for better transparency
+
+    const weights = {
+
+      'tariff': '1.0x',
+
+      'fda': '2.5x',  // Highest weight
+
+      'supply_chain': '1.5x',
+
+      'competition': '0.8x'
+
+    };
+
+    return weights[riskType] || '1.0x';
 
   };
 
@@ -295,6 +327,18 @@ export default function Home() {
       case "flagged":
 
         return sortedProducts.filter(product => product.risk_assessment.flags && product.risk_assessment.flags.length > 0);
+
+      case "distribute":
+
+        return sortedProducts.filter(product => product.suggested_action === "Distribute existing product");
+
+      case "develop":
+
+        return sortedProducts.filter(product => product.suggested_action === "Develop new PoP product");
+
+      case "notRecommended":
+
+        return sortedProducts.filter(product => product.suggested_action === "Not recommended - poor business alignment");
 
       case "popScore":
 
@@ -879,7 +923,21 @@ export default function Home() {
                   <option value="alphabetical">Alphabetical</option>
                   <option value="competition">Competition</option>
                   <option value="flagged">Flagged</option>
+                  <option value="distribute">Distribute Existing</option>
+                  <option value="develop">Develop New</option>
+                  <option value="notRecommended">Not Recommended</option>
                 </select>
+                {(sortBy === "distribute" || sortBy === "develop" || sortBy === "notRecommended") && (
+                  <span className={`px-2 py-1 text-xs rounded-full font-medium ${
+                    sortBy === "distribute" ? "bg-blue-100 text-blue-700" :
+                    sortBy === "develop" ? "bg-purple-100 text-purple-700" :
+                    "bg-red-100 text-red-700"
+                  }`}>
+                    {sortBy === "distribute" ? "Distribute" :
+                     sortBy === "develop" ? "Develop" :
+                     "Not Recommended"}
+                  </span>
+                )}
               </div>
             </div>
             
@@ -958,6 +1016,12 @@ export default function Home() {
                       <div className="text-gray-400 text-lg">
                         {sortBy === "flagged" 
                           ? "No flagged products found."
+                          : sortBy === "distribute"
+                          ? "No products recommended for distribution."
+                          : sortBy === "develop"
+                          ? "No products recommended for development."
+                          : sortBy === "notRecommended"
+                          ? "No products marked as not recommended."
                           : categoryFilter === "all" 
                             ? "No products found in this priority level."
                             : `No products found in "${categoryFilter}" category for this priority level.`
@@ -1788,24 +1852,28 @@ function ProductCard({ evaluation, getScoreColor, getScoreBgColor, getRiskColor,
                   {risk_assessment.tariff_risk.toUpperCase()}
                 </div>
                 <div className="text-xs text-gray-600">Tariff Risk</div>
+                <div className="text-xs text-blue-600 font-medium">Weight: {getRiskWeight('tariff')}</div>
               </div>
               <div className="text-center">
                 <div className={`text-lg font-bold ${getRiskColor(risk_assessment.fda_concern)}`}>
                   {risk_assessment.fda_concern.toUpperCase()}
                 </div>
                 <div className="text-xs text-gray-600">FDA Concern</div>
+                <div className="text-xs text-red-600 font-medium">Weight: {getRiskWeight('fda')}</div>
               </div>
               <div className="text-center">
                 <div className={`text-lg font-bold ${getRiskColor(risk_assessment.supply_chain_risk)}`}>
                   {risk_assessment.supply_chain_risk.toUpperCase()}
                 </div>
                 <div className="text-xs text-gray-600">Supply Chain</div>
+                <div className="text-xs text-orange-600 font-medium">Weight: {getRiskWeight('supply_chain')}</div>
               </div>
               <div className="text-center">
                 <div className={`text-lg font-bold ${getRiskColor(risk_assessment.competition_risk)}`}>
                   {risk_assessment.competition_risk.toUpperCase()}
                 </div>
                 <div className="text-xs text-gray-600">Competition</div>
+                <div className="text-xs text-gray-600 font-medium">Weight: {getRiskWeight('competition')}</div>
               </div>
             </div>
             
@@ -1872,11 +1940,45 @@ function ProductCard({ evaluation, getScoreColor, getScoreBgColor, getRiskColor,
                     {suggested_action === "Distribute existing product" 
                       ? `Leverage current supply chain and distribution networks. Estimated time to market: 3-6 months. 
                          Initial investment focus on marketing and inventory management.`
-                      : `Requires new product development cycle. Estimated time to market: 12-18 months. 
-                         Investment needed for R&D, testing, and regulatory compliance.`
+                      : suggested_action === "Develop new PoP product"
+                      ? `Requires new product development cycle. Estimated time to market: 12-18 months. 
+                         Initial investment focus on R&D, formulation, and regulatory compliance.`
+                      : `Poor business alignment. Not recommended for investment. 
+                         Consider alternative opportunities with better strategic fit.`
                     }
                     Confidence level: {confidence_score.toFixed(0)}% in projected outcomes.
                   </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Confidence Score Analysis */}
+            <div className="bg-white rounded-lg p-3 border border-blue-200">
+              <h6 className="font-medium text-gray-900 text-sm mb-2">Confidence Analysis</h6>
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Overall Confidence:</span>
+                  <span className={`font-medium ${getScoreColor(confidence_score)}`}>
+                    {confidence_score.toFixed(0)}%
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Data Quality:</span>
+                  <span className="font-medium text-gray-900">
+                    {product.description && product.description.length > 20 ? 'High' : 'Medium'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Trend Consistency:</span>
+                  <span className="font-medium text-gray-900">
+                    {Math.abs(product.trend_score - product.market_growth_rate) < 20 ? 'Consistent' : 'Variable'}
+                  </span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-gray-600">Risk Uncertainty:</span>
+                  <span className={`font-medium ${risk_assessment.fda_concern === 'high' ? 'text-red-600' : 'text-green-600'}`}>
+                    {risk_assessment.fda_concern === 'high' ? 'High' : risk_assessment.fda_concern === 'medium' ? 'Medium' : 'Low'}
+                  </span>
                 </div>
               </div>
             </div>
@@ -1906,7 +2008,9 @@ function ProductCard({ evaluation, getScoreColor, getScoreBgColor, getRiskColor,
                 <div className="flex justify-between">
                   <span className="text-gray-600">Timeline:</span>
                   <span className="font-medium text-gray-900">
-                    {suggested_action === "Distribute existing product" ? '3-6 months' : '12-18 months'}
+                    {suggested_action === "Distribute existing product" ? '3-6 months' 
+                      : suggested_action === "Develop new PoP product" ? '12-18 months'
+                      : 'Not applicable'}
                   </span>
                 </div>
               </div>

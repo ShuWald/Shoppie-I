@@ -14,15 +14,20 @@ class RiskAssessmentEngine:
         self.supply_chain_risk_factors = ["exotic", "rare", "endangered", "wildcrafted"]
     
     # Returns a RiskAssessment based on assessed risk in all categories 
-    def assess_risks(self, product: TrendingProduct) -> RiskAssessment:
-        """Assess various risks associated with the product"""
+    def assess_risks(self, product: TrendingProduct, ingredients: List[str] = None) -> RiskAssessment:
+        """Assess various risks associated with the product
+        
+        Args:
+            product: The product to assess
+            ingredients: Structured list of ingredients (if available)
+        """
         
         tariff_risk = self._assess_tariff_risk(product)
-        fda_concern = self._assess_fda_concern(product)
-        supply_chain_risk = self._assess_supply_chain_risk(product)
+        fda_concern = self._assess_fda_concern(product, ingredients)
+        supply_chain_risk = self._assess_supply_chain_risk(product, ingredients)
         competition_risk = self._assess_competition_risk(product)
         
-        flags = self._generate_flags(product, tariff_risk, fda_concern, supply_chain_risk, est_shelf_life=True)
+        flags = self._generate_flags(product, tariff_risk, fda_concern, supply_chain_risk, ingredients, est_shelf_life=True)
         
         assessment = RiskAssessment(
             tariff_risk=tariff_risk,
@@ -49,46 +54,89 @@ class RiskAssessmentEngine:
         
         return RiskLevel.LOW
     
-    def _assess_fda_concern(self, product: TrendingProduct) -> RiskLevel:
-        """Assess FDA regulatory concerns"""
-        # Extract potential ingredients from product description and keywords
-        text_to_check = f"{product.name} {product.description} {' '.join(product.trend_keywords)}".lower()
+    def _assess_fda_concern(self, product: TrendingProduct, ingredients: List[str] = None) -> RiskLevel:
+        """Assess FDA regulatory concerns using structured ingredient analysis"""
         
-        # Simple ingredient extraction - split on common separators
-        potential_ingredients = []
-        # Look for common ingredient patterns
-        words = re.findall(r'\b\w+\b', text_to_check)
-        potential_ingredients.extend(words)
-        
-        # Also check against known restricted substances
-        log_message("[RiskAssessment] Checking FDA substances list", additional_route="risk_assessment")
-        substances = get_fda_substances()
-        restricted_found = any(substance.lower() in text_to_check for substance in substances)
-        
-        if restricted_found:
-            return RiskLevel.HIGH
-        
-        for concern_keyword in self.fda_concern_keywords:
-            if concern_keyword in text_to_check:
+        # Use structured ingredients if provided, otherwise fall back to text analysis
+        if ingredients and len(ingredients) > 0:
+            # Structured ingredient analysis - much more accurate
+            log_message(f"[RiskAssessment] Using structured ingredients for FDA check: {len(ingredients)} ingredients", additional_route="risk_assessment")
+            
+            # Check against known restricted substances using proper ingredient matching
+            substances = get_fda_substances()
+            restricted_found = any(
+                substance.lower() in ingredient.lower() 
+                for ingredient in ingredients 
+                for substance in substances
+            )
+            
+            if restricted_found:
                 return RiskLevel.HIGH
-        
-        # Medium risk for supplements with strong health claims
-        if "supplement" in text_to_check and any(claim in text_to_check for claim in ["cure", "treat", "prevent"]):
-            return RiskLevel.MEDIUM
+            
+            # Check for concern keywords in structured ingredients
+            for ingredient in ingredients:
+                for concern_keyword in self.fda_concern_keywords:
+                    if concern_keyword in ingredient.lower():
+                        return RiskLevel.HIGH
+            
+            # Medium risk for supplements with strong health claims (check product description)
+            if "supplement" in product.name.lower() or "supplement" in product.description.lower():
+                if any(claim in product.description.lower() for claim in ["cure", "treat", "prevent"]):
+                    return RiskLevel.MEDIUM
+            
+        else:
+            # Fallback to text analysis (less accurate)
+            log_message("[RiskAssessment] Using fallback text analysis for FDA check", additional_route="risk_assessment")
+            text_to_check = f"{product.name} {product.description} {' '.join(product.trend_keywords)}".lower()
+            
+            # Check against known restricted substances
+            substances = get_fda_substances()
+            restricted_found = any(substance.lower() in text_to_check for substance in substances)
+            
+            if restricted_found:
+                return RiskLevel.HIGH
+            
+            for concern_keyword in self.fda_concern_keywords:
+                if concern_keyword in text_to_check:
+                    return RiskLevel.HIGH
+            
+            # Medium risk for supplements with strong health claims
+            if "supplement" in text_to_check and any(claim in text_to_check for claim in ["cure", "treat", "prevent"]):
+                return RiskLevel.MEDIUM
         
         return RiskLevel.LOW
     
-    def _assess_supply_chain_risk(self, product: TrendingProduct) -> RiskLevel:
-        """Assess supply chain complexity and risk"""
-        text_to_check = f"{product.name} {product.description} {' '.join(product.trend_keywords)}".lower()
+    def _assess_supply_chain_risk(self, product: TrendingProduct, ingredients: List[str] = None) -> RiskLevel:
+        """Assess supply chain complexity and risk using structured ingredient analysis"""
         
-        for risk_factor in self.supply_chain_risk_factors:
-            if risk_factor in text_to_check:
+        # Use structured ingredients if provided, otherwise fall back to text analysis
+        if ingredients and len(ingredients) > 0:
+            # Structured ingredient analysis - much more accurate
+            log_message(f"[RiskAssessment] Using structured ingredients for supply chain check: {len(ingredients)} ingredients", additional_route="risk_assessment")
+            
+            # Check for risk factors in structured ingredients
+            for ingredient in ingredients:
+                for risk_factor in self.supply_chain_risk_factors:
+                    if risk_factor in ingredient.lower():
+                        return RiskLevel.MEDIUM
+            
+            # Higher risk for exotic ingredients
+            for ingredient in ingredients:
+                if any(exotic in ingredient.lower() for exotic in ["exotic", "rare", "wild"]):
+                    return RiskLevel.MEDIUM
+            
+        else:
+            # Fallback to text analysis (less accurate)
+            log_message("[RiskAssessment] Using fallback text analysis for supply chain check", additional_route="risk_assessment")
+            text_to_check = f"{product.name} {product.description} {' '.join(product.trend_keywords)}".lower()
+            
+            for risk_factor in self.supply_chain_risk_factors:
+                if risk_factor in text_to_check:
+                    return RiskLevel.MEDIUM
+            
+            # Higher risk for exotic ingredients
+            if any(exotic in text_to_check for exotic in ["exotic", "rare", "wild"]):
                 return RiskLevel.MEDIUM
-        
-        # Higher risk for exotic ingredients
-        if any(exotic in text_to_check for exotic in ["exotic", "rare", "wild"]):
-            return RiskLevel.MEDIUM
         
         return RiskLevel.LOW
     
@@ -104,7 +152,7 @@ class RiskAssessmentEngine:
     
     # Generate risk flags based on the assessed risks throughout categories
     def _generate_flags(self, product: TrendingProduct, tariff_risk: RiskLevel, 
-                       fda_concern: RiskLevel, supply_chain_risk: RiskLevel, est_shelf_life: bool = True) -> List[str]:
+                       fda_concern: RiskLevel, supply_chain_risk: RiskLevel, ingredients: List[str] = None, est_shelf_life: bool = True) -> List[str]:
         """Generate specific risk flags"""
         flags = []
         
@@ -123,11 +171,17 @@ class RiskAssessmentEngine:
         elif supply_chain_risk == RiskLevel.MEDIUM:
             flags.append("Supply chain complexity - supplier verification needed")
         
-        # Check shelf life concerns
-        # Extract potential ingredients from product description
-        text_to_check = f"{product.name} {product.description} {' '.join(product.trend_keywords)}".lower()
-        # Simple extraction - look for common ingredient patterns
-        potential_ingredients = re.findall(r'\b(?:organic|natural|herbal|ginger|tea|ginseng|honey|mushroom|turmeric|extract|powder|capsule|tablet)\b', text_to_check)
+        # Check shelf life concerns using structured ingredients if available
+        if ingredients and len(ingredients) > 0:
+            # Use structured ingredients for shelf life analysis
+            log_message(f"[RiskAssessment] Using structured ingredients for shelf life check: {len(ingredients)} ingredients", additional_route="risk_assessment")
+            potential_ingredients = ingredients
+        else:
+            # Fallback to text extraction
+            log_message("[RiskAssessment] Using fallback text analysis for shelf life check", additional_route="risk_assessment")
+            text_to_check = f"{product.name} {product.description} {' '.join(product.trend_keywords)}".lower()
+            # Simple extraction - look for common ingredient patterns
+            potential_ingredients = re.findall(r'\b(?:organic|natural|herbal|ginger|tea|ginseng|honey|mushroom|turmeric|extract|powder|capsule|tablet)\b', text_to_check)
         
         if est_shelf_life and potential_ingredients:
             try:
