@@ -833,65 +833,7 @@ export default function Home() {
                   </p>
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <div className="flex items-end space-x-2">
-                  <div>
-                    <label htmlFor="page-input" className="block text-xs text-gray-500 mb-1">Page</label>
-                    <input
-                      id="page-input"
-                      type="text"
-                      inputMode="numeric"
-                      value={pageInput}
-                      onChange={(e) => setPageInput(e.target.value)}
-                      onBlur={() => {
-                        const num = Math.max(1, Number(pageInput) || 1);
-                        setPageInput(String(num));
-                      }}
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter') {
-                          const num = Math.max(1, Number(pageInput) || 1);
-                          setPageInput(String(num));
-                          fetchTrendingProducts(num, pageSize);
-                        }
-                      }}
-                      className="w-20 px-2 py-1.5 border border-gray-300 rounded text-sm text-gray-900"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="page-size-input" className="block text-xs text-gray-500 mb-1">Page Size</label>
-                    <input
-                      id="page-size-input"
-                      type="text"
-                      inputMode="numeric"
-                      value={pageSizeInput}
-                      onChange={(e) => setPageSizeInput(e.target.value)}
-                      onBlur={() => {
-                        const num = Math.min(100, Math.max(1, Number(pageSizeInput) || 10));
-                        setPageSizeInput(String(num));
-                      }}
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter') {
-                          const num = Math.min(100, Math.max(1, Number(pageSizeInput) || 10));
-                          setPageSizeInput(String(num));
-                          fetchTrendingProducts(page, num);
-                        }
-                      }}
-                      className="w-24 px-2 py-1.5 border border-gray-300 rounded text-sm text-gray-900"
-                    />
-                  </div>
-                  <button
-                    onClick={() => {
-                      const newPage = Math.max(1, Number(pageInput) || 1);
-                      const newPageSize = Math.min(100, Math.max(1, Number(pageSizeInput) || 10));
-                      setPageInput(String(newPage));
-                      setPageSizeInput(String(newPageSize));
-                      fetchTrendingProducts(newPage, newPageSize);
-                    }}
-                    className="px-3 py-2 bg-gray-800 text-white rounded hover:bg-gray-900 transition-colors"
-                  >
-                    Apply
-                  </button>
-                </div>
+              <div className="flex items-center gap-3">
                 <button 
                   onClick={() => {
                     const newPage = Math.max(1, Number(pageInput) || 1);
@@ -1127,48 +1069,113 @@ export default function Home() {
 
         {activeTab === "products" && (
           <div>
-            <div className="flex justify-between items-center mb-6">
-              <div className="flex items-center space-x-2">
-                <label htmlFor="priority-select" className="text-sm font-medium text-gray-700">Products:</label>
-                <select
-                  id="priority-select"
-                  value={priorityFilter}
-                  onChange={(e) => setPriorityFilter(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium text-gray-900"
-                >
-                  <option value="all">All Products</option>
-                  <option value="high">High Priority</option>
-                  <option value="medium">Medium Priority</option>
-                  <option value="low">Low Priority</option>
-                </select>
+            <div className="mb-6">
+              {/* Pagination Controls - Only show in Products tab */}
+              <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
+                <div className="flex items-center space-x-2">
+                  <label htmlFor="priority-select" className="text-sm font-medium text-gray-700">Products:</label>
+                  <select
+                    id="priority-select"
+                    value={priorityFilter}
+                    onChange={(e) => setPriorityFilter(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium text-gray-900"
+                  >
+                    <option value="all">All Products</option>
+                    <option value="high">High Priority</option>
+                    <option value="medium">Medium Priority</option>
+                    <option value="low">Low Priority</option>
+                  </select>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <label htmlFor="sort-select" className="text-sm font-medium text-gray-700">Sort:</label>
+                  <select
+                    id="sort-select"
+                    value={sortBy}
+                    onChange={(e) => setSortBy(e.target.value)}
+                    className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-gray-900"
+                  >
+                    <option value="popScore">PoP Score</option>
+                    <option value="alphabetical">Alphabetical</option>
+                    <option value="competition">Competition</option>
+                    <option value="flagged">Flagged</option>
+                    <option value="distribute">Distribute Existing</option>
+                    <option value="develop">Develop New</option>
+                    <option value="notRecommended">Not Recommended</option>
+                  </select>
+                  {(sortBy === "distribute" || sortBy === "develop" || sortBy === "notRecommended") && (
+                    <span className={`px-2 py-1 text-xs rounded-full font-medium ${
+                      sortBy === "distribute" ? "bg-blue-100 text-blue-700" :
+                      sortBy === "develop" ? "bg-purple-100 text-purple-700" :
+                      "bg-red-100 text-red-700"
+                    }`}>
+                      {sortBy === "distribute" ? "Distribute" :
+                       sortBy === "develop" ? "Develop" :
+                       "Not Recommended"}
+                    </span>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center space-x-2">
-                <label htmlFor="sort-select" className="text-sm font-medium text-gray-700">Sort:</label>
-                <select
-                  id="sort-select"
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-gray-900"
-                >
-                  <option value="popScore">PoP Score</option>
-                  <option value="alphabetical">Alphabetical</option>
-                  <option value="competition">Competition</option>
-                  <option value="flagged">Flagged</option>
-                  <option value="distribute">Distribute Existing</option>
-                  <option value="develop">Develop New</option>
-                  <option value="notRecommended">Not Recommended</option>
-                </select>
-                {(sortBy === "distribute" || sortBy === "develop" || sortBy === "notRecommended") && (
-                  <span className={`px-2 py-1 text-xs rounded-full font-medium ${
-                    sortBy === "distribute" ? "bg-blue-100 text-blue-700" :
-                    sortBy === "develop" ? "bg-purple-100 text-purple-700" :
-                    "bg-red-100 text-red-700"
-                  }`}>
-                    {sortBy === "distribute" ? "Distribute" :
-                     sortBy === "develop" ? "Develop" :
-                     "Not Recommended"}
-                  </span>
-                )}
+              
+              {/* Pagination Input Controls */}
+              <div className="flex flex-wrap justify-end items-center gap-3">
+                <div className="flex items-end space-x-2">
+                  <div>
+                    <label htmlFor="page-input" className="block text-xs text-gray-500 mb-1">Page</label>
+                    <input
+                      id="page-input"
+                      type="text"
+                      inputMode="numeric"
+                      value={pageInput}
+                      onChange={(e) => setPageInput(e.target.value)}
+                      onBlur={() => {
+                        const num = Math.max(1, Number(pageInput) || 1);
+                        setPageInput(String(num));
+                      }}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          const num = Math.max(1, Number(pageInput) || 1);
+                          setPageInput(String(num));
+                          fetchTrendingProducts(num, pageSize);
+                        }
+                      }}
+                      className="w-20 px-2 py-1.5 border border-gray-300 rounded text-sm text-gray-900"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="page-size-input" className="block text-xs text-gray-500 mb-1">Page Size</label>
+                    <input
+                      id="page-size-input"
+                      type="text"
+                      inputMode="numeric"
+                      value={pageSizeInput}
+                      onChange={(e) => setPageSizeInput(e.target.value)}
+                      onBlur={() => {
+                        const num = Math.min(100, Math.max(1, Number(pageSizeInput) || 10));
+                        setPageSizeInput(String(num));
+                      }}
+                      onKeyPress={(e) => {
+                        if (e.key === 'Enter') {
+                          const num = Math.min(100, Math.max(1, Number(pageSizeInput) || 10));
+                          setPageSizeInput(String(num));
+                          fetchTrendingProducts(page, num);
+                        }
+                      }}
+                      className="w-24 px-2 py-1.5 border border-gray-300 rounded text-sm text-gray-900"
+                    />
+                  </div>
+                  <button
+                    onClick={() => {
+                      const newPage = Math.max(1, Number(pageInput) || 1);
+                      const newPageSize = Math.min(100, Math.max(1, Number(pageSizeInput) || 10));
+                      setPageInput(String(newPage));
+                      setPageSizeInput(String(newPageSize));
+                      fetchTrendingProducts(newPage, newPageSize);
+                    }}
+                    className="px-3 py-2 bg-gray-800 text-white rounded hover:bg-gray-900 transition-colors"
+                  >
+                    Apply
+                  </button>
+                </div>
               </div>
             </div>
             
