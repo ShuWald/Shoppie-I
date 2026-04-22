@@ -13,7 +13,7 @@ class TrendAnalyzer:
         self.csv_processor = CSVDataProcessor(self.csv_path)
         self._cached_products: List[TrendingProduct] = []
         self._cache_initialized = False
-        self.max_page_size = 100
+        self.max_page_size = 500
     
     def preload_products(self) -> None:
         """Warm the CSV cache at startup to reduce first-request latency."""

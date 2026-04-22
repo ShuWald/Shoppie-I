@@ -65,10 +65,24 @@ export default function Home() {
 
 
   useEffect(() => {
+    console.log('useEffect triggered, activeTab:', activeTab);
     // Trigger pre-caching when dashboard loads
     triggerPreCaching();
-    fetchTrendingProducts();
+    // Always fetch comprehensive insights on initial load, then switch to tab-specific
+    fetchComprehensiveInsights();
   }, []);
+
+  useEffect(() => {
+    console.log('Tab change useEffect triggered, activeTab:', activeTab);
+    // For tab changes after initial load
+    if (activeTab === "overview") {
+      console.log('Fetching comprehensive insights for overview tab');
+      fetchComprehensiveInsights();
+    } else {
+      console.log('Fetching regular products for other tab');
+      fetchTrendingProducts();
+    }
+  }, [activeTab]);
 
   const triggerPreCaching = async () => {
     try {
@@ -86,6 +100,153 @@ export default function Home() {
   };
 
 
+
+  const fetchComprehensiveInsights = async () => {
+    console.log('fetchComprehensiveInsights called');
+    // Fetch all products for comprehensive insights using batch processing
+    setLoading(true);
+    setError(null);
+    
+    try {
+      console.log('Making batch API calls for comprehensive insights from all 326 products...');
+      
+      // Process all products in batches of 50 to avoid timeouts
+      const batchSize = 50;
+      const totalProducts = 326;
+      const batches = Math.ceil(totalProducts / batchSize);
+      
+      let allEvaluations = [];
+      let totalEvaluated = 0;
+      
+      for (let batch = 0; batch < batches; batch++) {
+        const page = batch + 1;
+        console.log(`Processing batch ${batch + 1}/${batches} (page ${page})`);
+        
+        const response = await fetch(`http://localhost:8000/api/evaluate-trending-products?page=${page}&page_size=${batchSize}&stream=false`, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status} on batch ${batch + 1}`);
+        }
+
+        const report = await response.json();
+        console.log(`Batch ${batch + 1} API response structure:`, Object.keys(report));
+        
+        // Check if report has the expected structure
+        if (!report) {
+          console.error(`Batch ${batch + 1}: Invalid response structure`, report);
+          throw new Error(`Invalid response structure on batch ${batch + 1}`);
+        }
+        
+        // Collect all evaluations from this batch with fallbacks
+        const batchEvaluations = [
+          ...(report.high_priority_products || []),
+          ...(report.medium_priority_products || []),
+          ...(report.low_priority_products || [])
+        ];
+        
+        allEvaluations = [...allEvaluations, ...batchEvaluations];
+        totalEvaluated += report.total_products_evaluated || 0;
+        
+        console.log(`Batch ${batch + 1} completed: ${batchEvaluations.length} products evaluated`);
+      }
+      
+      console.log(`All batches completed: ${allEvaluations.length} total products evaluated`);
+      
+      // Generate comprehensive insights from all evaluations
+      const comprehensiveInsights = generateComprehensiveInsights(allEvaluations);
+      
+      // Create comprehensive report
+      const comprehensiveReport = {
+        generated_at: new Date().toISOString(),
+        total_products_evaluated: allEvaluations.length,
+        page: 1,
+        page_size: allEvaluations.length,
+        total_products_available: totalProducts,
+        total_pages: 1,
+        high_priority_products: allEvaluations.filter(e => e.pop_relevance_score >= 70),
+        medium_priority_products: allEvaluations.filter(e => e.pop_relevance_score >= 40 && e.pop_relevance_score < 70),
+        low_priority_products: allEvaluations.filter(e => e.pop_relevance_score < 40),
+        summary_insights: comprehensiveInsights,
+      };
+      
+      console.log('Comprehensive insights generated:', comprehensiveInsights);
+      setReport(comprehensiveReport);
+      setLoading(false);
+      
+    } catch (err) {
+      console.error('Error in fetchComprehensiveInsights:', err);
+      setError(err.message);
+      setLoading(false);
+    }
+  };
+
+  const generateComprehensiveInsights = (evaluations) => {
+    console.log('Generating insights from', evaluations.length, 'evaluations');
+    const insights = [];
+    
+    if (!evaluations || evaluations.length === 0) {
+      return ["No products evaluated"];
+    }
+    
+    // Count categories
+    const categories = {};
+    evaluations.forEach(e => {
+      const category = e.product.category;
+      categories[category] = (categories[category] || 0) + 1;
+    });
+    
+    // Top category
+    const topCategory = Object.entries(categories).reduce((a, b) => a[1] > b[1] ? a : b);
+    insights.push(`Most trending category: ${topCategory[0]} (${topCategory[1]} products)`);
+    
+    // Average scores
+    const avgPopScore = evaluations.reduce((sum, e) => sum + e.pop_relevance_score, 0) / evaluations.length;
+    insights.push(`Average PoP relevance score: ${avgPopScore.toFixed(1)}`);
+    
+    // Action distribution
+    const actions = {};
+    evaluations.forEach(e => {
+      const action = e.suggested_action;
+      actions[action] = (actions[action] || 0) + 1;
+    });
+    
+    if (actions["Distribute existing product"]) {
+      insights.push(`Distribute Existing: ${actions["Distribute existing product"]}`);
+    }
+    if (actions["Develop new PoP product"]) {
+      insights.push(`Develop New: ${actions["Develop new PoP product"]}`);
+    }
+    if (actions["Not recommended - poor business alignment"]) {
+      insights.push(`Not Recommended: ${actions["Not recommended - poor business alignment"]}`);
+    }
+    
+    // Risk analysis
+    const highRiskProducts = evaluations.filter(e => 
+      e.risk_assessment.tariff_risk === "high" || 
+      e.risk_assessment.fda_concern === "high"
+    );
+    if (highRiskProducts.length > 0) {
+      insights.push(`FDA High Risk: ${highRiskProducts.filter(e => e.risk_assessment.fda_concern === "high").length}`);
+    }
+    
+    // Confidence analysis
+    const highConfidence = evaluations.filter(e => e.confidence_score >= 75);
+    if (highConfidence.length > 0) {
+      insights.push(`High Confidence: ${highConfidence.length}`);
+    }
+    
+    // Top opportunity
+    const topProduct = evaluations.reduce((a, b) => a.pop_relevance_score > b.pop_relevance_score ? a : b);
+    insights.push(`Top opportunity: ${topProduct.product.name} (Score: ${topProduct.pop_relevance_score.toFixed(1)})`);
+    
+    return insights;
+  };
 
   const fetchTrendingProducts = async (requestedPage = page, requestedPageSize = pageSize) => {
 
@@ -512,6 +673,68 @@ export default function Home() {
 
     }
 
+    // New insight types for decision categories
+    if (insight.includes("Distribute Existing")) {
+      const match = insight.match(/Distribute Existing: (\d+)/);
+      return {
+        title: "Ready to Distribute",
+        value: match ? match[1] : "0",
+        subtitle: "products ready for market",
+        valueClass: "text-2xl font-bold text-blue-600"
+      };
+    }
+
+    if (insight.includes("Develop New")) {
+      const match = insight.match(/Develop New: (\d+)/);
+      return {
+        title: "Development Pipeline",
+        value: match ? match[1] : "0", 
+        subtitle: "products requiring development",
+        valueClass: "text-2xl font-bold text-purple-600"
+      };
+    }
+
+    if (insight.includes("Not Recommended")) {
+      const match = insight.match(/Not Recommended: (\d+)/);
+      return {
+        title: "Not Recommended",
+        value: match ? match[1] : "0",
+        subtitle: "products with poor alignment", 
+        valueClass: "text-2xl font-bold text-red-600"
+      };
+    }
+
+    // Risk management insights
+    if (insight.includes("FDA High Risk")) {
+      const match = insight.match(/FDA High Risk: (\d+)/);
+      return {
+        title: "FDA High Risk",
+        value: match ? match[1] : "0",
+        subtitle: "products requiring regulatory review",
+        valueClass: "text-2xl font-bold text-orange-600"
+      };
+    }
+
+    if (insight.includes("Supply Chain Risk")) {
+      const match = insight.match(/Supply Chain Risk: (\d+)/);
+      return {
+        title: "Supply Chain Risk",
+        value: match ? match[1] : "0",
+        subtitle: "products with supply chain challenges",
+        valueClass: "text-2xl font-bold text-yellow-600"
+      };
+    }
+
+    if (insight.includes("High Confidence")) {
+      const match = insight.match(/High Confidence: (\d+)/);
+      return {
+        title: "High Confidence",
+        value: match ? match[1] : "0",
+        subtitle: "products with reliable data",
+        valueClass: "text-2xl font-bold text-green-600"
+      };
+    }
+
     // Default fallback
 
     return {
@@ -520,12 +743,13 @@ export default function Home() {
 
       value: insight,
 
-      subtitle: ""
+      subtitle: "data point",
+
+      valueClass: "text-base font-bold"
 
     };
 
-  };
-
+  }
 
 
   if (loading && !report) {
@@ -709,18 +933,25 @@ export default function Home() {
             {/* Summary Insights - New Design */}
             <div className="mb-8">
               <h2 className="text-lg font-semibold text-gray-900 mb-4">Key Insights</h2>
-              <div className="grid grid-cols-3 gap-4">
-                {report.summary_insights.map((insight, index) => {
-                  const cardData = parseInsightCard(insight);
-                  return (
-                    <div key={index} className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
-                      <p className="text-base font-bold text-blue-600 mb-2 break-words">{cardData.title}</p>
-                      <p className="text-lg font-bold text-gray-900 mb-2 leading-tight break-words">{cardData.value}</p>
-                      <p className="text-sm text-gray-600 leading-relaxed break-words">{cardData.subtitle}</p>
-                    </div>
-                  );
-                })}
-              </div>
+              {report?.summary_insights && report.summary_insights.length > 0 ? (
+                <div className="grid grid-cols-3 gap-4">
+                  {report.summary_insights.map((insight, index) => {
+                    const cardData = parseInsightCard(insight);
+                    return (
+                      <div key={index} className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+                        <p className="text-base font-bold text-blue-600 mb-2 break-words">{cardData.title}</p>
+                        <p className={`mb-2 leading-tight break-words ${cardData.valueClass || 'text-lg font-bold text-gray-900'}`}>{cardData.value}</p>
+                        <p className="text-sm text-gray-600 leading-relaxed break-words">{cardData.subtitle}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <p className="text-gray-500">No insights available</p>
+                  <p className="text-sm text-gray-400">Loading data...</p>
+                </div>
+              )}
             </div>
 
             {/* Actionable Recommendations Panel */}
@@ -1006,6 +1237,7 @@ export default function Home() {
                           getScoreBgColor={getScoreBgColor}
                           getRiskColor={getRiskColor}
                           getActionColor={getActionColor}
+                          getRiskWeight={getRiskWeight}
                         />
                       ))}
                     </div>
@@ -1560,7 +1792,7 @@ export default function Home() {
   );
 }
 
-function ProductCard({ evaluation, getScoreColor, getScoreBgColor, getRiskColor, getActionColor, priority, expandedReports, toggleReportExpansion, formatCategoryName }) {
+function ProductCard({ evaluation, getScoreColor, getScoreBgColor, getRiskColor, getActionColor, getRiskWeight, priority, expandedReports, toggleReportExpansion, formatCategoryName }) {
 
   const { product, pop_relevance_score, risk_assessment, suggested_action, reasoning, confidence_score } = evaluation;
 

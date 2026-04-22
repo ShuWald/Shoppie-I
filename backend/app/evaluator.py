@@ -751,22 +751,32 @@ class ProductEvaluator:
             avg_pop_score = sum(e.pop_relevance_score for e in evaluations) / len(evaluations)
             insights.append(f"Average PoP relevance score: {avg_pop_score:.1f}")
             
-            # Action distribution
+            # Action distribution - new decision categories
             actions = [e.suggested_action.value for e in evaluations]
             action_counts = Counter(actions)
             
             if action_counts[SuggestedAction.DISTRIBUTE_EXISTING.value]:
-                insights.append(f"Products ready for distribution: {action_counts[SuggestedAction.DISTRIBUTE_EXISTING.value]}")
+                insights.append(f"Distribute Existing: {action_counts[SuggestedAction.DISTRIBUTE_EXISTING.value]}")
             
             if action_counts[SuggestedAction.DEVELOP_NEW.value]:
-                insights.append(f"Products requiring development: {action_counts[SuggestedAction.DEVELOP_NEW.value]}")
+                insights.append(f"Develop New: {action_counts[SuggestedAction.DEVELOP_NEW.value]}")
             
-            # Risk analysis
-            high_risk_products = [e for e in evaluations if 
-                                e.risk_assessment.tariff_risk.value == "high" or 
-                                e.risk_assessment.fda_concern.value == "high"]
-            if high_risk_products:
-                insights.append(f"High-risk products requiring careful review: {len(high_risk_products)}")
+            if action_counts[SuggestedAction.NOT_RECOMMENDED.value]:
+                insights.append(f"Not Recommended: {action_counts[SuggestedAction.NOT_RECOMMENDED.value]}")
+            
+            # Risk analysis - enhanced risk insights
+            fda_high_risk = [e for e in evaluations if e.risk_assessment.fda_concern.value == "high"]
+            if fda_high_risk:
+                insights.append(f"FDA High Risk: {len(fda_high_risk)}")
+            
+            supply_chain_risk = [e for e in evaluations if e.risk_assessment.supply_chain_risk.value == "high"]
+            if supply_chain_risk:
+                insights.append(f"Supply Chain Risk: {len(supply_chain_risk)}")
+            
+            # Confidence analysis
+            high_confidence = [e for e in evaluations if e.confidence_score >= 75]
+            if high_confidence:
+                insights.append(f"High Confidence: {len(high_confidence)}")
             
             # Top opportunity
             if evaluations:
