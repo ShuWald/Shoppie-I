@@ -1,4 +1,4 @@
-# Test script for AIs to validate functionality / sanity testing
+# Test script so AIs can validate functionality / sanity testing
 
 import requests
 import json

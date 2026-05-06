@@ -1,3 +1,6 @@
+(IMPORTANT NOTE) Many of these changes are unverified. Do NOT implement unless there's a human comment approving the change. Human comments will be at the end of each section, idenfiable by their signature with their name
+
+
 # Backend Code Analysis: Unused & Inefficient Code
 
 ## Executive Summary
@@ -29,6 +32,8 @@ Your backend has **2 major files** that are **not being used** in the current ap
 - ⚠️ Keep if you want to re-enable live Google Trends scraping (for real-time updates)
 - If keeping: Move to a separate `data_refresh/` folder and document as "offline utility"
 
+Comments: The ideal functionality is for the webscraper to supplement evalutations, but was never integrated. Maybe archive into another folder for now
+\- (Shu)
 ---
 
 ### 2. **ingredients_scraper.py** - COMPLETELY UNUSED
@@ -51,6 +56,8 @@ Your backend has **2 major files** that are **not being used** in the current ap
 - ❌ Delete - not integrated into the evaluation pipeline
 - Alternative: If you want ingredient-based risk assessment, integrate into `risk_assessment.py` later
 
+Comments: imo the alternative is better here, theres potential to integrate the functionatlity to expand our analysis capabilities. Also archive
+\- (Shu)
 ---
 
 ### 3. **dynamic_family_extractor.py** - UNUSED
@@ -86,6 +93,7 @@ Your backend has **2 major files** that are **not being used** in the current ap
 - 📝 Keep as documentation if useful for understanding the data flow
 - Consider moving to `examples/` or `scripts/` folder if kept
 
+Comments: Integrating webscraper into evaluator is desirable in the main pipeline, but standalone evaluation is unnecessary
 ---
 
 ### 5. **filter.py - MOSTLY UNUSED ENDPOINTS**
@@ -116,6 +124,9 @@ Your backend has **2 major files** that are **not being used** in the current ap
 - ❌ Delete unused functions: `check_tariff_rates()`, `estimate_shelf_life()`, and their endpoints
 - If needed later: These can be re-added or implemented differently
 
+
+Comments: Might be needed later, whether the logic works is still unconfirmed
+\- (Shu)
 ---
 
 ## 🟤 TEST/UTILITY FILES
@@ -134,6 +145,7 @@ Your backend has **2 major files** that are **not being used** in the current ap
 - ❌ Delete - tests unused code
 - 📝 Keep only if you plan to re-enable live scraping
 
+Comments: Why do we need this file?? If we're worried about persistent memory we should just write information to CSV
 ---
 
 ### 7. **examine_pop_data.py** - EXPLORATION UTILITY (Not in main flow)
