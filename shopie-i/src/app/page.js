@@ -44,15 +44,15 @@ export default function Home() {
 
   const [sortBy, setSortBy] = useState("popScore");
 
-  const [priorityFilter, setPriorityFilter] = useState("all");
+  const [selectedPriorities, setSelectedPriorities] = useState(new Set(["all"]));
 
-  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [selectedSortOptions, setSelectedSortOptions] = useState(new Set(["popScore"]));
+
+  const [searchTerm, setSearchTerm] = useState("");
 
   const [expandedReports, setExpandedReports] = useState(new Set());
 
   const [expandedRecommendation, setExpandedRecommendation] = useState(null);
-
-  const [hoveredPrediction, setHoveredPrediction] = useState(null);
 
   const [page, setPage] = useState(1);
 
@@ -61,6 +61,28 @@ export default function Home() {
   const [pageInput, setPageInput] = useState("1");
 
   const [pageSizeInput, setPageSizeInput] = useState("10");
+
+  const [showPageSizeMenu, setShowPageSizeMenu] = useState(false);
+
+  const [tempPageSize, setTempPageSize] = useState("10");
+
+  const [visualData, setVisualData] = useState(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (showPageSizeMenu && !event.target.closest('.pagination-dropdown')) {
+        setShowPageSizeMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showPageSizeMenu]);
+
+  const [visualLoading, setVisualLoading] = useState(false);
+
+  const [visualError, setVisualError] = useState(null);
 
 
 
@@ -78,6 +100,9 @@ export default function Home() {
     if (activeTab === "overview") {
       console.log('Fetching comprehensive insights for overview tab');
       fetchComprehensiveInsights();
+    } else if (activeTab === "visual") {
+      console.log('Fetching comprehensive data for visual tab');
+      fetchComprehensiveVisualData();
     } else {
       console.log('Fetching regular products for other tab');
       fetchTrendingProducts();
@@ -235,12 +260,7 @@ export default function Home() {
       insights.push(`FDA High Risk: ${highRiskProducts.filter(e => e.risk_assessment.fda_concern === "high").length}`);
     }
     
-    // Confidence analysis
-    const highConfidence = evaluations.filter(e => e.confidence_score >= 75);
-    if (highConfidence.length > 0) {
-      insights.push(`High Confidence: ${highConfidence.length}`);
-    }
-    
+        
     // Top opportunity
     const topProduct = evaluations.reduce((a, b) => a.pop_relevance_score > b.pop_relevance_score ? a : b);
     insights.push(`Top opportunity: ${topProduct.product.name} (Score: ${topProduct.pop_relevance_score.toFixed(1)})`);
@@ -377,6 +397,87 @@ export default function Home() {
 
   };
 
+  const fetchComprehensiveVisualData = async () => {
+    console.log('fetchComprehensiveVisualData called');
+    // Fetch all products for visual analysis using batch processing
+    setVisualLoading(true);
+    setVisualError(null);
+    
+    try {
+      console.log('Making batch API calls for comprehensive visual data from all 326 products...');
+      
+      // Process all products in batches of 50 to avoid timeouts
+      const batchSize = 50;
+      const totalProducts = 326;
+      const batches = Math.ceil(totalProducts / batchSize);
+      
+      let allEvaluations = [];
+      let totalEvaluated = 0;
+      
+      for (let batch = 0; batch < batches; batch++) {
+        const page = batch + 1;
+        console.log(`Processing visual batch ${batch + 1}/${batches} (page ${page})`);
+        
+        const response = await fetch(`http://localhost:8000/api/evaluate-trending-products?page=${page}&page_size=${batchSize}&stream=false`, {
+          method: 'GET',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status} on visual batch ${batch + 1}`);
+        }
+
+        const report = await response.json();
+        console.log(`Visual batch ${batch + 1} API response structure:`, Object.keys(report));
+        
+        // Check if report has the expected structure
+        if (!report) {
+          console.error(`Visual batch ${batch + 1}: Invalid response structure`, report);
+          throw new Error(`Invalid response structure on visual batch ${batch + 1}`);
+        }
+        
+        // Collect all evaluations from this batch with fallbacks
+        const batchEvaluations = [
+          ...(report.high_priority_products || []),
+          ...(report.medium_priority_products || []),
+          ...(report.low_priority_products || [])
+        ];
+        
+        allEvaluations = [...allEvaluations, ...batchEvaluations];
+        totalEvaluated += report.total_products_evaluated || 0;
+        
+        console.log(`Visual batch ${batch + 1} completed: ${batchEvaluations.length} products evaluated`);
+      }
+      
+      console.log(`All visual batches completed: ${allEvaluations.length} total products evaluated`);
+      
+      // Create comprehensive visual data structure
+      const comprehensiveVisualData = {
+        generated_at: new Date().toISOString(),
+        total_products_evaluated: allEvaluations.length,
+        page: 1,
+        page_size: allEvaluations.length,
+        total_products_available: totalProducts,
+        total_pages: 1,
+        high_priority_products: allEvaluations.filter(e => e.pop_relevance_score >= 70),
+        medium_priority_products: allEvaluations.filter(e => e.pop_relevance_score >= 40 && e.pop_relevance_score < 70),
+        low_priority_products: allEvaluations.filter(e => e.pop_relevance_score < 40),
+      };
+      
+      console.log('Comprehensive visual data generated:', comprehensiveVisualData);
+      setVisualData(comprehensiveVisualData);
+      setVisualLoading(false);
+      
+    } catch (err) {
+      console.error('Error in fetchComprehensiveVisualData:', err);
+      setVisualError(err.message);
+      setVisualLoading(false);
+    }
+  };
+
 
 
   const getScoreColor = (score) => {
@@ -467,58 +568,89 @@ export default function Home() {
 
   const sortProducts = (products) => {
 
-    const sortedProducts = [...products];
+    let processedProducts = [...products];
 
-    switch (sortBy) {
-
-      case "alphabetical":
-
-        return sortedProducts.sort((a, b) => a.product.name.localeCompare(b.product.name));
-
-      case "competition":
-
-        return sortedProducts.sort((a, b) => {
-
-          const competitionOrder = { low: 0, medium: 1, high: 2 };
-
-          return competitionOrder[a.risk_assessment.competition_risk] - competitionOrder[b.risk_assessment.competition_risk];
-
-        });
-
-      case "flagged":
-
-        return sortedProducts.filter(product => product.risk_assessment.flags && product.risk_assessment.flags.length > 0);
-
-      case "distribute":
-
-        return sortedProducts.filter(product => product.suggested_action === "Distribute existing product");
-
-      case "develop":
-
-        return sortedProducts.filter(product => product.suggested_action === "Develop new PoP product");
-
-      case "notRecommended":
-
-        return sortedProducts.filter(product => product.suggested_action === "Not recommended - poor business alignment");
-
-      case "popScore":
-
-      default:
-
-        return sortedProducts.sort((a, b) => b.pop_relevance_score - a.pop_relevance_score);
-
+    // Apply filters first
+    const filters = Array.from(selectedSortOptions);
+    
+    if (filters.includes("flagged")) {
+      processedProducts = processedProducts.filter(product => product.risk_assessment.flags && product.risk_assessment.flags.length > 0);
     }
+    
+    if (filters.includes("distribute")) {
+      processedProducts = processedProducts.filter(product => product.suggested_action === "Distribute existing product");
+    }
+    
+    if (filters.includes("develop")) {
+      processedProducts = processedProducts.filter(product => product.suggested_action === "Develop new PoP product");
+    }
+    
+    if (filters.includes("notRecommended")) {
+      processedProducts = processedProducts.filter(product => product.suggested_action === "Not recommended - poor business alignment");
+    }
+
+    // Apply sorting
+    const sortOptions = Array.from(selectedSortOptions);
+    
+    // Default to popScore if no sorting options
+    if (sortOptions.length === 0 || sortOptions.includes("popScore")) {
+      return processedProducts.sort((a, b) => b.pop_relevance_score - a.pop_relevance_score);
+    }
+    
+    // Apply alphabetical sorting if selected
+    if (sortOptions.includes("alphabetical")) {
+      processedProducts = processedProducts.sort((a, b) => a.product.name.localeCompare(b.product.name));
+    }
+    
+    // Apply competition sorting if selected
+    if (sortOptions.includes("competition")) {
+      processedProducts = processedProducts.sort((a, b) => {
+        const competitionOrder = { low: 0, medium: 1, high: 2 };
+        return competitionOrder[a.risk_assessment.competition_risk] - competitionOrder[b.risk_assessment.competition_risk];
+      });
+    }
+
+    return processedProducts;
 
   };
 
 
 
-  const filterProductsByCategory = (products) => {
-
-    if (categoryFilter === "all") return products;
-
-    return products.filter(product => product.product.category.toLowerCase() === categoryFilter.toLowerCase());
-
+  const filterProductsBySearch = (products) => {
+    if (!searchTerm.trim()) return products;
+    
+    const searchLower = searchTerm.toLowerCase();
+    
+    return products.filter(product => {
+      // Search in product name
+      if (product.product.name.toLowerCase().includes(searchLower)) {
+        return true;
+      }
+      
+      // Search in product category
+      if (product.product.category.toLowerCase().includes(searchLower)) {
+        return true;
+      }
+      
+      // Search in trend keywords
+      if (product.product.trend_keywords && product.product.trend_keywords.some(keyword => 
+        keyword.toLowerCase().includes(searchLower)
+      )) {
+        return true;
+      }
+      
+      // Search in description
+      if (product.product.description && product.product.description.toLowerCase().includes(searchLower)) {
+        return true;
+      }
+      
+      // Search in suggested action
+      if (product.suggested_action && product.suggested_action.toLowerCase().includes(searchLower)) {
+        return true;
+      }
+      
+      return false;
+    });
   };
 
 
@@ -583,7 +715,7 @@ export default function Home() {
 
         subtitle: match ? `${match[2]} products` : "No data",
 
-        valueClass: "text-base font-bold" // Smaller font for category names
+        valueClass: "text-base font-bold text-gray-900" // Smaller font for category names with dark color
 
       };
 
@@ -601,7 +733,7 @@ export default function Home() {
 
         subtitle: "across all products",
 
-        valueClass: "text-2xl font-bold" // Match READY FOR DISTRIBUTION tile spacing
+        valueClass: "text-2xl font-bold text-gray-900" // Match READY FOR DISTRIBUTION tile spacing with dark color
 
       };
 
@@ -667,7 +799,7 @@ export default function Home() {
 
         subtitle: match ? `PoP score ${match[2]}` : "No score",
 
-        valueClass: "text-base font-bold" // Smaller font for long product names
+        valueClass: "text-base font-bold text-gray-900" // Smaller font for long product names with dark color
 
       };
 
@@ -725,16 +857,7 @@ export default function Home() {
       };
     }
 
-    if (insight.includes("High Confidence")) {
-      const match = insight.match(/High Confidence: (\d+)/);
-      return {
-        title: "High Confidence",
-        value: match ? match[1] : "0",
-        subtitle: "products with reliable data",
-        valueClass: "text-2xl font-bold text-green-600"
-      };
-    }
-
+    
     // Default fallback
 
     return {
@@ -807,12 +930,19 @@ export default function Home() {
 
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="h-screen bg-gray-50 flex overflow-hidden">
       {/* Sidebar */}
-      <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+      <Sidebar 
+        activeTab={activeTab} 
+        setActiveTab={setActiveTab}
+        selectedPriorities={selectedPriorities}
+        setSelectedPriorities={setSelectedPriorities}
+        selectedSortOptions={selectedSortOptions}
+        setSelectedSortOptions={setSelectedSortOptions}
+      />
       
       {/* Main Content */}
-      <div className="flex-1">
+      <div className="flex-1 flex flex-col overflow-hidden">
         {/* Header */}
         <header className="bg-white shadow-sm border-b">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -855,7 +985,7 @@ export default function Home() {
           </div>
         </header>
 
-        <main className="w-full max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-6 md:py-8">
+        <main className="flex-1 w-full max-w-7xl mx-auto px-3 sm:px-4 md:px-6 lg:px-8 py-6 md:py-8 overflow-y-auto">
 
         {loading && report && (
           <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-700">
@@ -881,9 +1011,9 @@ export default function Home() {
                     const cardData = parseInsightCard(insight);
                     return (
                       <div key={index} className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
-                        <p className="text-base font-bold text-blue-600 mb-2 break-words">{cardData.title}</p>
+                        <p className="text-base font-bold text-blue-700 mb-2 break-words">{cardData.title}</p>
                         <p className={`mb-2 leading-tight break-words ${cardData.valueClass || 'text-lg font-bold text-gray-900'}`}>{cardData.value}</p>
-                        <p className="text-sm text-gray-600 leading-relaxed break-words">{cardData.subtitle}</p>
+                        <p className="text-sm text-gray-700 leading-relaxed break-words">{cardData.subtitle}</p>
                       </div>
                     );
                   })}
@@ -1070,142 +1200,131 @@ export default function Home() {
         {activeTab === "products" && (
           <div>
             <div className="mb-6">
-              {/* Pagination Controls - Only show in Products tab */}
-              <div className="flex flex-wrap justify-between items-center gap-4 mb-4">
-                <div className="flex items-center space-x-2">
-                  <label htmlFor="priority-select" className="text-sm font-medium text-gray-700">Products:</label>
-                  <select
-                    id="priority-select"
-                    value={priorityFilter}
-                    onChange={(e) => setPriorityFilter(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm font-medium text-gray-900"
+              {/* Search Bar and Pagination */}
+              <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mb-4">
+                <div className="relative w-full sm:w-96 lg:w-1/2">
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Search products by name, category, or keywords..."
+                    className="w-full px-4 py-2 pl-10 pr-10 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-gray-800 placeholder-gray-400 caret-gray-800"
+                  />
+                  <svg 
+                    className="absolute left-3 top-2.5 w-4 h-4 text-gray-400" 
+                    fill="none" 
+                    stroke="currentColor" 
+                    viewBox="0 0 24 24"
                   >
-                    <option value="all">All Products</option>
-                    <option value="high">High Priority</option>
-                    <option value="medium">Medium Priority</option>
-                    <option value="low">Low Priority</option>
-                  </select>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <label htmlFor="sort-select" className="text-sm font-medium text-gray-700">Sort:</label>
-                  <select
-                    id="sort-select"
-                    value={sortBy}
-                    onChange={(e) => setSortBy(e.target.value)}
-                    className="px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm text-gray-900"
-                  >
-                    <option value="popScore">PoP Score</option>
-                    <option value="alphabetical">Alphabetical</option>
-                    <option value="competition">Competition</option>
-                    <option value="flagged">Flagged</option>
-                    <option value="distribute">Distribute Existing</option>
-                    <option value="develop">Develop New</option>
-                    <option value="notRecommended">Not Recommended</option>
-                  </select>
-                  {(sortBy === "distribute" || sortBy === "develop" || sortBy === "notRecommended") && (
-                    <span className={`px-2 py-1 text-xs rounded-full font-medium ${
-                      sortBy === "distribute" ? "bg-blue-100 text-blue-700" :
-                      sortBy === "develop" ? "bg-purple-100 text-purple-700" :
-                      "bg-red-100 text-red-700"
-                    }`}>
-                      {sortBy === "distribute" ? "Distribute" :
-                       sortBy === "develop" ? "Develop" :
-                       "Not Recommended"}
-                    </span>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                  {searchTerm && (
+                    <button
+                      onClick={() => setSearchTerm("")}
+                      className="absolute right-3 top-2.5 text-gray-400 hover:text-gray-600"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
                   )}
                 </div>
-              </div>
-              
-              {/* Pagination Input Controls */}
-              <div className="flex flex-wrap justify-end items-center gap-3">
-                <div className="flex items-end space-x-2">
-                  <div>
-                    <label htmlFor="page-input" className="block text-xs text-gray-500 mb-1">Page</label>
-                    <input
-                      id="page-input"
-                      type="text"
-                      inputMode="numeric"
-                      value={pageInput}
-                      onChange={(e) => setPageInput(e.target.value)}
-                      onBlur={() => {
-                        const num = Math.max(1, Number(pageInput) || 1);
-                        setPageInput(String(num));
-                      }}
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter') {
-                          const num = Math.max(1, Number(pageInput) || 1);
-                          setPageInput(String(num));
-                          fetchTrendingProducts(num, pageSize);
-                        }
-                      }}
-                      className="w-20 px-2 py-1.5 border border-gray-300 rounded text-sm text-gray-900"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="page-size-input" className="block text-xs text-gray-500 mb-1">Page Size</label>
-                    <input
-                      id="page-size-input"
-                      type="text"
-                      inputMode="numeric"
-                      value={pageSizeInput}
-                      onChange={(e) => setPageSizeInput(e.target.value)}
-                      onBlur={() => {
-                        const num = Math.min(100, Math.max(1, Number(pageSizeInput) || 10));
-                        setPageSizeInput(String(num));
-                      }}
-                      onKeyPress={(e) => {
-                        if (e.key === 'Enter') {
-                          const num = Math.min(100, Math.max(1, Number(pageSizeInput) || 10));
-                          setPageSizeInput(String(num));
-                          fetchTrendingProducts(page, num);
-                        }
-                      }}
-                      className="w-24 px-2 py-1.5 border border-gray-300 rounded text-sm text-gray-900"
-                    />
-                  </div>
+                
+                {/* Pagination Controls */}
+                <div className="flex items-center gap-2">
                   <button
                     onClick={() => {
-                      const newPage = Math.max(1, Number(pageInput) || 1);
-                      const newPageSize = Math.min(100, Math.max(1, Number(pageSizeInput) || 10));
-                      setPageInput(String(newPage));
-                      setPageSizeInput(String(newPageSize));
-                      fetchTrendingProducts(newPage, newPageSize);
+                      if (page > 1) {
+                        const newPage = page - 1;
+                        setPageInput(String(newPage));
+                        fetchTrendingProducts(newPage, pageSize);
+                      }
                     }}
-                    className="px-3 py-2 bg-gray-800 text-white rounded hover:bg-gray-900 transition-colors"
+                    disabled={page <= 1}
+                    className="p-2 rounded border border-gray-300 bg-white hover:bg-blue-600 hover:border-blue-600 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white transition-all duration-200 shadow-sm hover:shadow-md"
                   >
-                    Apply
+                    <svg className="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M15 19l-7-7 7-7" />
+                    </svg>
+                  </button>
+                  
+                  <div className="relative pagination-dropdown">
+                    <button
+                      onClick={() => {
+                        setShowPageSizeMenu(!showPageSizeMenu);
+                        setTempPageSize(pageSizeInput);
+                      }}
+                      className="px-3 py-1.5 border border-gray-300 rounded hover:bg-gray-50 transition-colors cursor-pointer hover:border-blue-400 hover:bg-blue-50"
+                    >
+                      <span className="text-sm text-gray-700">
+                        {((page - 1) * pageSize) + 1}-{Math.min(page * pageSize, report?.total_products_available || 0)} of {report?.total_products_available || 0}
+                      </span>
+                    </button>
+                    
+                    {showPageSizeMenu && (
+                      <div className="absolute top-full right-0 mt-1 w-48 bg-white border border-gray-300 rounded-lg shadow-lg z-10">
+                        <div className="p-3">
+                          <label className="block text-xs font-medium text-gray-700 mb-2">
+                            Sample Size
+                          </label>
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            value={tempPageSize}
+                            onChange={(e) => setTempPageSize(e.target.value)}
+                            onKeyPress={(e) => {
+                              if (e.key === 'Enter') {
+                                const num = Math.min(100, Math.max(1, Number(tempPageSize) || 10));
+                                setPageSizeInput(String(num));
+                                setShowPageSizeMenu(false);
+                                fetchTrendingProducts(1, num);
+                              }
+                            }}
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            placeholder="Enter size (1-100)"
+                            autoFocus
+                          />
+                          <div className="flex justify-between mt-2">
+                            <button
+                              onClick={() => setShowPageSizeMenu(false)}
+                              className="px-2 py-1 text-xs text-gray-600 hover:text-gray-800"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={() => {
+                                const num = Math.min(100, Math.max(1, Number(tempPageSize) || 10));
+                                setPageSizeInput(String(num));
+                                setShowPageSizeMenu(false);
+                                fetchTrendingProducts(1, num);
+                              }}
+                              className="px-2 py-1 text-xs bg-blue-600 text-white rounded hover:bg-blue-700"
+                            >
+                              Apply
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <button
+                    onClick={() => {
+                      const totalPages = report?.total_pages || 1;
+                      if (page < totalPages) {
+                        const newPage = page + 1;
+                        setPageInput(String(newPage));
+                        fetchTrendingProducts(newPage, pageSize);
+                      }
+                    }}
+                    disabled={page >= (report?.total_pages || 1)}
+                    className="p-2 rounded border border-gray-300 bg-white hover:bg-blue-600 hover:border-blue-600 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-white transition-all duration-200 shadow-sm hover:shadow-md"
+                  >
+                    <svg className="w-4 h-4 text-gray-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 5l7 7-7 7" />
+                    </svg>
                   </button>
                 </div>
-              </div>
-            </div>
-            
-            {/* Category Search Terms */}
-            <div className="mb-6">
-              <div className="text-sm font-medium text-gray-700 mb-3">Filter by Category:</div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  onClick={() => setCategoryFilter("all")}
-                  className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
-                    categoryFilter === "all"
-                      ? "bg-blue-600 text-white"
-                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                  }`}
-                >
-                  All Categories
-                </button>
-                {getUniqueCategories().map((category) => (
-                  <button
-                    key={category}
-                    onClick={() => setCategoryFilter(category)}
-                    className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
-                      categoryFilter === category
-                        ? "bg-blue-600 text-white"
-                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                    }`}
-                  >
-                    {formatCategoryName(category)}
-                  </button>
-                ))}
               </div>
             </div>
             <div className="space-y-4">
@@ -1213,21 +1332,39 @@ export default function Home() {
               {(() => {
                 let allProducts = [];
                 
-                if (priorityFilter === "all") {
+                // Handle multiple priority selections
+                const priorities = Array.from(selectedPriorities);
+                
+                if (priorities.includes("all")) {
                   allProducts = [
-                    ...filterProductsByCategory(report.high_priority_products).map(p => ({...p, priority: "high"})),
-                    ...filterProductsByCategory(report.medium_priority_products).map(p => ({...p, priority: "medium"})),
-                    ...filterProductsByCategory(report.low_priority_products).map(p => ({...p, priority: "low"}))
+                    ...report.high_priority_products.map(p => ({...p, priority: "high"})),
+                    ...report.medium_priority_products.map(p => ({...p, priority: "medium"})),
+                    ...report.low_priority_products.map(p => ({...p, priority: "low"}))
                   ];
-                } else if (priorityFilter === "high") {
-                  allProducts = filterProductsByCategory(report.high_priority_products).map(p => ({...p, priority: "high"}));
-                } else if (priorityFilter === "medium") {
-                  allProducts = filterProductsByCategory(report.medium_priority_products).map(p => ({...p, priority: "medium"}));
-                } else if (priorityFilter === "low") {
-                  allProducts = filterProductsByCategory(report.low_priority_products).map(p => ({...p, priority: "low"}));
+                } else {
+                  if (priorities.includes("high")) {
+                    allProducts = [
+                      ...allProducts,
+                      ...report.high_priority_products.map(p => ({...p, priority: "high"}))
+                    ];
+                  }
+                  if (priorities.includes("medium")) {
+                    allProducts = [
+                      ...allProducts,
+                      ...report.medium_priority_products.map(p => ({...p, priority: "medium"}))
+                    ];
+                  }
+                  if (priorities.includes("low")) {
+                    allProducts = [
+                      ...allProducts,
+                      ...report.low_priority_products.map(p => ({...p, priority: "low"}))
+                    ];
+                  }
                 }
 
-                const sortedProducts = sortProducts(allProducts);
+                // Apply search filter
+                const searchedProducts = filterProductsBySearch(allProducts);
+                const sortedProducts = sortProducts(searchedProducts);
 
                 if (sortedProducts.length > 0) {
                   return (
@@ -1253,19 +1390,27 @@ export default function Home() {
                   return (
                     <div className="text-center py-12">
                       <div className="text-gray-400 text-lg">
-                        {sortBy === "flagged" 
+                        {searchTerm.trim() 
+                          ? `No products found matching "${searchTerm}". Try different keywords.`
+                          : selectedSortOptions.has("flagged")
                           ? "No flagged products found."
-                          : sortBy === "distribute"
+                          : selectedSortOptions.has("distribute")
                           ? "No products recommended for distribution."
-                          : sortBy === "develop"
+                          : selectedSortOptions.has("develop")
                           ? "No products recommended for development."
-                          : sortBy === "notRecommended"
+                          : selectedSortOptions.has("notRecommended")
                           ? "No products marked as not recommended."
-                          : categoryFilter === "all" 
-                            ? "No products found in this priority level."
-                            : `No products found in "${categoryFilter}" category for this priority level.`
+                          : "No products found in the selected priority levels."
                         }
                       </div>
+                      {searchTerm.trim() && (
+                        <button
+                          onClick={() => setSearchTerm("")}
+                          className="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition-colors"
+                        >
+                          Clear Search
+                        </button>
+                      )}
                     </div>
                   );
                 }
@@ -1277,6 +1422,18 @@ export default function Home() {
         {activeTab === "visual" && (
           <div>
             <h2 className="text-xl font-semibold text-gray-900 mb-6">Visual Data Analysis</h2>
+            
+            {visualLoading && (
+              <div className="mb-4 rounded-md border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-700">
+                Loading comprehensive visual data from all 326 products...
+              </div>
+            )}
+            
+            {visualError && (
+              <div className="mb-4 rounded-md border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+                Error loading visual data: {visualError}
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4 md:gap-6">
               {/* POP RELEVANCE SCORES BY PRODUCT - Chart.js Horizontal Bar Chart */}
               <div className="bg-white border border-gray-200 rounded-xl p-4 md:p-5">
@@ -1298,14 +1455,14 @@ export default function Home() {
                 <div className="relative h-48 sm:h-52 lg:h-56">
                   <Bar
                     data={{
-                      labels: [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products].map(p => p.product.name),
+                      labels: [...(visualData || report).high_priority_products, ...(visualData || report).medium_priority_products, ...(visualData || report).low_priority_products].map(p => p.product.name),
                       datasets: [{
                         label: 'PoP Score',
-                        data: [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products].map(p => p.pop_relevance_score),
+                        data: [...(visualData || report).high_priority_products, ...(visualData || report).medium_priority_products, ...(visualData || report).low_priority_products].map(p => p.pop_relevance_score),
                         backgroundColor: [
-                          ...report.high_priority_products.map(() => '#1D9E75'),
-                          ...report.medium_priority_products.map(() => '#378ADD'),
-                          ...report.low_priority_products.map(() => '#888780')
+                          ...(visualData || report).high_priority_products.map(() => '#1D9E75'),
+                          ...(visualData || report).medium_priority_products.map(() => '#378ADD'),
+                          ...(visualData || report).low_priority_products.map(() => '#888780')
                         ],
                         borderRadius: 4,
                         borderSkipped: false,
@@ -1331,7 +1488,7 @@ export default function Home() {
                 <div className="flex flex-wrap gap-3 mb-3">
                   {(() => {
                     const categoryCounts = {};
-                    [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products].forEach(product => {
+                    [...(visualData || report).high_priority_products, ...(visualData || report).medium_priority_products, ...(visualData || report).low_priority_products].forEach(product => {
                       const category = product.product.category;
                       categoryCounts[category] = (categoryCounts[category] || 0) + 1;
                     });
@@ -1356,7 +1513,7 @@ export default function Home() {
                     data={{
                       labels: (() => {
                         const categoryCounts = {};
-                        [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products].forEach(product => {
+                        [...(visualData || report).high_priority_products, ...(visualData || report).medium_priority_products, ...(visualData || report).low_priority_products].forEach(product => {
                           const category = product.product.category;
                           categoryCounts[category] = (categoryCounts[category] || 0) + 1;
                         });
@@ -1365,7 +1522,7 @@ export default function Home() {
                       datasets: [{
                         data: (() => {
                           const categoryCounts = {};
-                          [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products].forEach(product => {
+                          [...(visualData || report).high_priority_products, ...(visualData || report).medium_priority_products, ...(visualData || report).low_priority_products].forEach(product => {
                             const category = product.product.category;
                             categoryCounts[category] = (categoryCounts[category] || 0) + 1;
                           });
@@ -1373,7 +1530,7 @@ export default function Home() {
                         })(),
                         backgroundColor: (() => {
                           const categoryCounts = {};
-                          [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products].forEach(product => {
+                          [...(visualData || report).high_priority_products, ...(visualData || report).medium_priority_products, ...(visualData || report).low_priority_products].forEach(product => {
                             const category = product.product.category;
                             categoryCounts[category] = (categoryCounts[category] || 0) + 1;
                           });
@@ -1405,7 +1562,7 @@ export default function Home() {
                 <div className="relative h-48 sm:h-52 lg:h-56">
                   <Bubble
                     data={{
-                      datasets: [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products].map((product, index) => ({
+                      datasets: [...(visualData || report).high_priority_products, ...(visualData || report).medium_priority_products, ...(visualData || report).low_priority_products].map((product, index) => ({
                         label: product.product.name,
                         data: [{
                           x: product.product.market_growth_rate,
@@ -1424,13 +1581,13 @@ export default function Home() {
                       scales: {
                         x: { 
                           title: { display: true, text: 'Market growth (%)', font: { size: 11 } }, 
-                          min: 5, 
-                          max: 55,
+                          min: 0, 
+                          max: 100,
                           ticks: { font: { size: 11 } }
                         },
                         y: { 
                           title: { display: true, text: 'Consumer interest', font: { size: 11 } }, 
-                          min: 45, 
+                          min: 0, 
                           max: 100,
                           ticks: { font: { size: 11 } }
                         }
@@ -1465,7 +1622,7 @@ export default function Home() {
                         { 
                           label: 'Low',    
                           data: (() => {
-                            const allProducts = [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products];
+                            const allProducts = [...(visualData || report).high_priority_products, ...(visualData || report).medium_priority_products, ...(visualData || report).low_priority_products];
                             return [
                               allProducts.filter(p => p.risk_assessment.tariff_risk === 'low').length,
                               allProducts.filter(p => p.risk_assessment.fda_concern === 'low').length,
@@ -1479,7 +1636,7 @@ export default function Home() {
                         { 
                           label: 'Medium', 
                           data: (() => {
-                            const allProducts = [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products];
+                            const allProducts = [...(visualData || report).high_priority_products, ...(visualData || report).medium_priority_products, ...(visualData || report).low_priority_products];
                             return [
                               allProducts.filter(p => p.risk_assessment.tariff_risk === 'medium').length,
                               allProducts.filter(p => p.risk_assessment.fda_concern === 'medium').length,
@@ -1493,7 +1650,7 @@ export default function Home() {
                         { 
                           label: 'High',   
                           data: (() => {
-                            const allProducts = [...report.high_priority_products, ...report.medium_priority_products, ...report.low_priority_products];
+                            const allProducts = [...(visualData || report).high_priority_products, ...(visualData || report).medium_priority_products, ...(visualData || report).low_priority_products];
                             return [
                               allProducts.filter(p => p.risk_assessment.tariff_risk === 'high').length,
                               allProducts.filter(p => p.risk_assessment.fda_concern === 'high').length,
@@ -1522,263 +1679,7 @@ export default function Home() {
           </div>
         )}
 
-        {activeTab === "trends" && (
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-6">Trend Predictions</h2>
-            <div className="bg-white rounded-lg shadow p-6">
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Emerging Trends Analysis</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  <div 
-                    className="border border-gray-200 rounded-lg p-4 relative"
-                    onMouseEnter={() => setHoveredPrediction('herbal')}
-                    onMouseLeave={() => setHoveredPrediction(null)}
-                  >
-                    <div className="flex items-center mb-2">
-                      <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center mr-3">
-                        <svg className="w-4 h-4 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
-                        </svg>
-                      </div>
-                      <h4 className="font-semibold text-gray-900">Herbal Supplements</h4>
-                    </div>
-                    <p className="text-sm text-gray-600 mb-2">Strong upward trend with 85% market confidence</p>
-                    <div className="flex items-center text-xs text-green-600">
-                      <span className="font-medium">+24% growth expected</span>
-                    </div>
-                    {hoveredPrediction === 'herbal' && (
-                      <div className="absolute left-0 right-0 top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg p-4 z-10">
-                        <h5 className="text-xs font-semibold text-gray-900 mb-2">Validation Data</h5>
-                        <div className="space-y-2 text-xs">
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Market Size:</span>
-                            <span className="text-gray-900 font-medium">$2.4B</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Consumer Interest:</span>
-                            <span className="text-gray-900 font-medium">89%</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Search Volume:</span>
-                            <span className="text-gray-900 font-medium">+156% YoY</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Competitor Count:</span>
-                            <span className="text-gray-900 font-medium">12</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Regulatory Risk:</span>
-                            <span className="text-gray-900 font-medium">Low</span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div 
-                    className="border border-gray-200 rounded-lg p-4 relative"
-                    onMouseEnter={() => setHoveredPrediction('beverages')}
-                    onMouseLeave={() => setHoveredPrediction(null)}
-                  >
-                    <div className="flex items-center mb-2">
-                      <div className="w-8 h-8 bg-yellow-100 rounded-full flex items-center justify-center mr-3">
-                        <svg className="w-4 h-4 text-yellow-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14M12 5l7 7-7 7" />
-                        </svg>
-                      </div>
-                      <h4 className="font-semibold text-gray-900">Functional Beverages</h4>
-                    </div>
-                    <p className="text-sm text-gray-600 mb-2">Moderate growth with seasonal variations</p>
-                    <div className="flex items-center text-xs text-yellow-600">
-                      <span className="font-medium">+12% growth expected</span>
-                    </div>
-                    {hoveredPrediction === 'beverages' && (
-                      <div className="absolute left-0 right-0 top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg p-4 z-10">
-                        <h5 className="text-xs font-semibold text-gray-900 mb-2">Validation Data</h5>
-                        <div className="space-y-2 text-xs">
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Market Size:</span>
-                            <span className="text-gray-900 font-medium">$1.8B</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Consumer Interest:</span>
-                            <span className="text-gray-900 font-medium">72%</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Search Volume:</span>
-                            <span className="text-gray-900 font-medium">+89% YoY</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Competitor Count:</span>
-                            <span className="text-gray-900 font-medium">24</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Regulatory Risk:</span>
-                            <span className="text-gray-900 font-medium">Medium</span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                  
-                  <div 
-                    className="border border-gray-200 rounded-lg p-4 relative"
-                    onMouseEnter={() => setHoveredPrediction('topical')}
-                    onMouseLeave={() => setHoveredPrediction(null)}
-                  >
-                    <div className="flex items-center mb-2">
-                      <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center mr-3">
-                        <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                        </svg>
-                      </div>
-                      <h4 className="font-semibold text-gray-900">Topical Products</h4>
-                    </div>
-                    <p className="text-sm text-gray-600 mb-2">Steady demand with niche opportunities</p>
-                    <div className="flex items-center text-xs text-blue-600">
-                      <span className="font-medium">+8% growth expected</span>
-                    </div>
-                    {hoveredPrediction === 'topical' && (
-                      <div className="absolute left-0 right-0 top-full mt-2 bg-white border border-gray-200 rounded-lg shadow-lg p-4 z-10">
-                        <h5 className="text-xs font-semibold text-gray-900 mb-2">Validation Data</h5>
-                        <div className="space-y-2 text-xs">
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Market Size:</span>
-                            <span className="text-gray-900 font-medium">$950M</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Consumer Interest:</span>
-                            <span className="text-gray-900 font-medium">65%</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Search Volume:</span>
-                            <span className="text-gray-900 font-medium">+45% YoY</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Competitor Count:</span>
-                            <span className="text-gray-900 font-medium">8</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-600">Regulatory Risk:</span>
-                            <span className="text-gray-900 font-medium">Medium</span>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-              
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Seasonal Forecast</h3>
-                <div className="bg-gray-50 rounded-lg p-4">
-                  <div className="space-y-4">
-                    <div className="border border-gray-200 rounded-lg p-4 bg-white">
-                      <div className="flex items-center justify-between mb-3">
-                        <div>
-                          <span className="text-sm font-semibold text-gray-900">Q1 2026</span>
-                          <p className="text-xs text-gray-500 mt-1">Jan-Mar</p>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-sm font-bold text-blue-600">$1.2M</span>
-                          <p className="text-xs text-gray-500">Projected Revenue</p>
-                        </div>
-                      </div>
-                      <div className="mb-3">
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div className="bg-blue-500 h-2 rounded-full" style={{width: "65%"}}></div>
-                        </div>
-                        <div className="flex justify-between mt-1">
-                          <span className="text-xs text-gray-500">65% Capacity</span>
-                          <span className="text-xs text-blue-600">+18% vs Q4 2025</span>
-                        </div>
-                      </div>
-                      <div className="text-xs text-gray-600">
-                        <span className="font-medium">Key Drivers:</span> New Year wellness resolutions, immune health focus
-                      </div>
-                    </div>
-                    
-                    <div className="border border-gray-200 rounded-lg p-4 bg-white">
-                      <div className="flex items-center justify-between mb-3">
-                        <div>
-                          <span className="text-sm font-semibold text-gray-900">Q2 2026</span>
-                          <p className="text-xs text-gray-500 mt-1">Apr-Jun</p>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-sm font-bold text-green-600">$1.8M</span>
-                          <p className="text-xs text-gray-500">Projected Revenue</p>
-                        </div>
-                      </div>
-                      <div className="mb-3">
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div className="bg-green-500 h-2 rounded-full" style={{width: "85%"}}></div>
-                        </div>
-                        <div className="flex justify-between mt-1">
-                          <span className="text-xs text-gray-500">85% Capacity</span>
-                          <span className="text-xs text-green-600">+50% vs Q1 2026</span>
-                        </div>
-                      </div>
-                      <div className="text-xs text-gray-600">
-                        <span className="font-medium">Key Drivers:</span> Spring outdoor activities, allergy season demand
-                      </div>
-                    </div>
-                    
-                    <div className="border border-gray-200 rounded-lg p-4 bg-white">
-                      <div className="flex items-center justify-between mb-3">
-                        <div>
-                          <span className="text-sm font-semibold text-gray-900">Q3 2026</span>
-                          <p className="text-xs text-gray-500 mt-1">Jul-Sep</p>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-sm font-bold text-yellow-600">$1.5M</span>
-                          <p className="text-xs text-gray-500">Projected Revenue</p>
-                        </div>
-                      </div>
-                      <div className="mb-3">
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div className="bg-yellow-500 h-2 rounded-full" style={{width: "70%"}}></div>
-                        </div>
-                        <div className="flex justify-between mt-1">
-                          <span className="text-xs text-gray-500">70% Capacity</span>
-                          <span className="text-xs text-yellow-600">-17% vs Q2 2026</span>
-                        </div>
-                      </div>
-                      <div className="text-xs text-gray-600">
-                        <span className="font-medium">Key Drivers:</span> Summer travel lull, back-to-school preparation
-                      </div>
-                    </div>
-                    
-                    <div className="border border-gray-200 rounded-lg p-4 bg-white">
-                      <div className="flex items-center justify-between mb-3">
-                        <div>
-                          <span className="text-sm font-semibold text-gray-900">Q4 2026</span>
-                          <p className="text-xs text-gray-500 mt-1">Oct-Dec</p>
-                        </div>
-                        <div className="text-right">
-                          <span className="text-sm font-bold text-purple-600">$2.1M</span>
-                          <p className="text-xs text-gray-500">Projected Revenue</p>
-                        </div>
-                      </div>
-                      <div className="mb-3">
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div className="bg-purple-500 h-2 rounded-full" style={{width: "90%"}}></div>
-                        </div>
-                        <div className="flex justify-between mt-1">
-                          <span className="text-xs text-gray-500">90% Capacity</span>
-                          <span className="text-xs text-purple-600">+40% vs Q3 2026</span>
-                        </div>
-                      </div>
-                      <div className="text-xs text-gray-600">
-                        <span className="font-medium">Key Drivers:</span> Holiday gift season, year-end wellness focus
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
+        
 
 
         {/* Report Metadata */}
