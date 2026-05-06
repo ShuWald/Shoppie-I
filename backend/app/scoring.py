@@ -1,17 +1,49 @@
 from typing import List
+import os
+import json
 from .models import TrendingProduct, BusinessRuleEvaluation, RiskAssessment, ProductEvaluation, ProductCategory
 
 # Class containing product relevance scoring logic
 # Functions: calculate overall relevance score, calculate scores based on individual factors(trends, business rules, risk flags), generate reasoning (based on flags), calculate confidence
 class ScoringEngine:
     def __init__(self):
-        self.weights = {
+        # Load configurable weights from environment variables or use defaults
+        self.weights = self._load_weights()
+    
+    def _load_weights(self) -> dict:
+        """Load scoring weights from environment variables or JSON file"""
+        # Default weights
+        default_weights = {
             'trend_score': 0.25,
             'market_growth': 0.20,
             'consumer_interest': 0.15,
             'business_rules': 0.25,
             'risk_adjustment': 0.15
         }
+        
+        # Try to load from environment variables
+        env_weights = {}
+        for key, default_value in default_weights.items():
+            env_key = f"SCORING_WEIGHT_{key.upper()}"
+            env_value = os.getenv(env_key)
+            if env_value:
+                try:
+                    env_weights[key] = float(env_value)
+                except ValueError:
+                    print(f"[ScoringEngine] Invalid weight value for {env_key}: {env_value}, using default {default_value}")
+                    env_weights[key] = default_value
+            else:
+                env_weights[key] = default_value
+        
+        # Validate that weights sum to 1.0 (or close)
+        total_weight = sum(env_weights.values())
+        if abs(total_weight - 1.0) > 0.01:  # Allow small floating point differences
+            print(f"[ScoringEngine] Warning: Weights sum to {total_weight:.3f}, should sum to 1.0. Normalizing...")
+            # Normalize weights
+            env_weights = {k: v / total_weight for k, v in env_weights.items()}
+        
+        print(f"[ScoringEngine] Using weights: {env_weights}")
+        return env_weights
     
     # Scores items based on:  1. trends, 2. business rules alignment, and 3. risk factors
     def calculate_pop_relevance_score(self, product: TrendingProduct, 
@@ -53,23 +85,40 @@ class ScoringEngine:
         return (passed_rules / len(rules)) * 100
     
     def _calculate_risk_penalty(self, risk_assessment: RiskAssessment) -> float:
-        """Calculate risk penalty score"""
-        risk_scores = {
-            'low': 0,
-            'medium': 15,
-            'high': 35
+        """Calculate risk penalty score with different weights per risk type"""
+        
+        # Different weights per risk type - FDA risk is most critical
+        risk_weights = {
+            'tariff': 1.0,      # Financial impact
+            'fda': 2.5,         # Regulatory risk - most critical
+            'supply_chain': 1.5, # Operational complexity
+            'competition': 0.8   # Market pressure
         }
         
-        tariff_penalty = risk_scores[risk_assessment.tariff_risk.value]
-        fda_penalty = risk_scores[risk_assessment.fda_concern.value]
-        supply_penalty = risk_scores[risk_assessment.supply_chain_risk.value]
-        competition_penalty = risk_scores[risk_assessment.competition_risk.value]
+        # Nonlinear risk penalties - higher risks have disproportionate impact
+        risk_penalties = {
+            'low': 0,
+            'medium': 12,       # Reduced from 15
+            'high': 40          # Increased from 35
+        }
         
-        # Additional penalty for each flag
-        flag_penalty = len(risk_assessment.flags) * 3
+        # Calculate weighted penalties
+        tariff_penalty = risk_penalties[risk_assessment.tariff_risk.value] * risk_weights['tariff']
+        fda_penalty = risk_penalties[risk_assessment.fda_concern.value] * risk_weights['fda']
+        supply_penalty = risk_penalties[risk_assessment.supply_chain_risk.value] * risk_weights['supply_chain']
+        competition_penalty = risk_penalties[risk_assessment.competition_risk.value] * risk_weights['competition']
         
+        # Additional penalty for each flag (weighted by severity)
+        flag_penalty = len(risk_assessment.flags) * 2.5
+        
+        # Total penalty with higher cap for more nuanced scoring
         total_penalty = tariff_penalty + fda_penalty + supply_penalty + competition_penalty + flag_penalty
-        return min(50, total_penalty)  # Cap penalty at 50 points
+        
+        # Apply diminishing returns for very high penalties (nonlinear scaling)
+        if total_penalty > 60:
+            total_penalty = 60 + (total_penalty - 60) * 0.5  # Half penalty for excess over 60
+        
+        return min(80, total_penalty)  # Higher cap but with diminishing returns
     
     def generate_reasoning(self, product: TrendingProduct, 
                           business_rules: BusinessRuleEvaluation,
@@ -116,32 +165,59 @@ class ScoringEngine:
     def calculate_confidence_score(self, product: TrendingProduct,
                                  business_rules: BusinessRuleEvaluation,
                                  risk_assessment: RiskAssessment) -> float:
-        """Calculate confidence in the evaluation (0-100)"""
+        """Calculate confidence in the evaluation based on data quality and uncertainty"""
         
-        confidence_factors = []
+        # Base confidence starts at 50 (neutral)
+        confidence = 50.0
         
-        # Higher confidence for well-known categories
-        if product.category in [ProductCategory.GINGER, ProductCategory.TEA, ProductCategory.GINSENG]:
-            confidence_factors.append(20)
-        else:
-            confidence_factors.append(10)
+        # Data quality factors
+        data_quality_factors = {
+            'has_description': bool(product.description and len(product.description) > 20),
+            'has_keywords': bool(product.trend_keywords and len(product.trend_keywords) > 1),
+            'has_category': product.category is not None,
+            'has_scores': all(hasattr(product, attr) and getattr(product, attr) is not None 
+                           for attr in ['trend_score', 'market_growth_rate', 'consumer_interest_score'])
+        }
         
-        # Higher confidence for stronger trends
-        if product.trend_score >= 75:
-            confidence_factors.append(20)
-        elif product.trend_score >= 60:
-            confidence_factors.append(15)
-        else:
-            confidence_factors.append(10)
+        # Add/subtract based on data quality
+        quality_score = sum(data_quality_factors.values()) / len(data_quality_factors)
+        confidence += quality_score * 20  # Up to +20 for perfect data
         
-        # Lower confidence with high risks
+        # Trend reliability - higher confidence for consistent trend signals
+        trend_consistency = 0
+        if product.trend_score and product.market_growth_rate and product.consumer_interest_score:
+            # Check if all trend metrics are aligned (all high or all low)
+            trend_values = [product.trend_score, product.market_growth_rate, product.consumer_interest_score]
+            if all(v >= 70 for v in trend_values) or all(v <= 30 for v in trend_values):
+                trend_consistency = 15  # Consistent trends = higher confidence
+            elif abs(max(trend_values) - min(trend_values)) > 50:
+                trend_consistency = -10  # Inconsistent trends = lower confidence
+        
+        confidence += trend_consistency
+        
+        # Risk uncertainty - higher risks increase uncertainty
+        risk_uncertainty = 0
         if risk_assessment.fda_concern.value == "high":
-            confidence_factors.append(-10)
-        elif risk_assessment.tariff_risk.value == "high":
-            confidence_factors.append(-5)
+            risk_uncertainty -= 15  # High regulatory risk = more uncertainty
+        elif risk_assessment.fda_concern.value == "medium":
+            risk_uncertainty -= 5
         
-        # Higher confidence with clear business rules alignment
+        if len(risk_assessment.flags) > 3:
+            risk_uncertainty -= 10  # Many flags = complex situation = more uncertainty
+        
+        confidence += risk_uncertainty
+        
+        # Business rules clarity - clear alignment increases confidence
         business_rules_score = self._calculate_business_rules_score(business_rules)
-        confidence_factors.append(business_rules_score / 5)
+        if business_rules_score >= 80:
+            confidence += 10  # Strong alignment = higher confidence
+        elif business_rules_score <= 40:
+            confidence -= 5  # Poor alignment = lower confidence
         
-        return max(0, min(100, sum(confidence_factors)))
+        # Category familiarity - more confidence in well-known categories
+        familiar_categories = [ProductCategory.GINGER, ProductCategory.TEA, ProductCategory.GINSENG]
+        if product.category in familiar_categories:
+            confidence += 5
+        
+        # Ensure confidence stays within bounds
+        return max(0, min(100, confidence))

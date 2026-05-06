@@ -24,6 +24,7 @@ class RiskLevel(str, Enum):
 class SuggestedAction(str, Enum):
     DISTRIBUTE_EXISTING = "Distribute existing product"
     DEVELOP_NEW = "Develop new PoP product"
+    NOT_RECOMMENDED = "Not recommended - poor business alignment"
 
 '''
 --------------------------------
